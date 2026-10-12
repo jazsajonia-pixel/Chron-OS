@@ -54,6 +54,11 @@ fun SettingsApp() {
                 "and is not affiliated with Microsoft Windows.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        OutlinedButton(onClick = { app.settings.update { it.copy(onboardingCompleted = false) } }, modifier = Modifier.padding(top = 12.dp).testTag("settings_tour")) { Text("Show welcome tour") }
+        SectionTitle("Privacy")
+        Text("PocketOS requests no Android permissions, has no ads or analytics, and uploads nothing. Files you open are read only when you choose them. " +
+            "Diagnostics are kept on this phone; a compatibility report is shared only when you press Share and pick where it goes.",
+            style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("settings_privacy"))
         OutlinedButton(onClick = { confirmReset = true }, modifier = Modifier.padding(top = 12.dp).testTag("settings_reset")) { Text("Reset settings to defaults") }
     }
     if (confirmReset) ConfirmDialog("Reset settings?", "Appearance, input and display preferences return to their defaults. Your files are not affected.", "Reset", { confirmReset = false }) {

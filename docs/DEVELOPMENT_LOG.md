@@ -209,3 +209,33 @@ Limitations
 - Crash handling verified in JVM tests by calling `recordCrash` directly; a real process crash/restart was not exercised on a device.
 
 Next: Phase 8 — polish, onboarding, documentation and release build.
+
+## Phase 8 — Polish, accessibility and release readiness (2026-10-12)
+
+Implemented
+- First-run welcome tour (5 steps: what PocketOS is / is not, pointer & keyboard, external monitor caveat, PC programs
+  caveat, privacy), Skip/Back/Next, keyboard (→/Enter, ←, Esc), survives recreation; reopen from Settings.
+- Settings → Privacy disclosure. Cursor speed/size and UI scale controls already existed (Phases 2/4).
+- `TestPocketOsApp` (test-only) marks the tour completed so other tests start on the plain desktop.
+- README.md (install, usage, privacy, limitations, testing status, troubleshooting; "Android app, not an OS"),
+  THIRD_PARTY_NOTICES.md, manual test steps for Phases 6–8 in docs/HARDWARE_TEST_CHECKLIST.md.
+
+Bugs found and fixed
+- Tour backdrop used `clickable`, which merged the whole tour into one accessibility node (crash on paneTitle merge in
+  tests; would read as one blob in TalkBack) → replaced with a non-merging tap blocker.
+- Lint `StateFlowValueCalledInComposition` (4): Library wizard/details read runtime state non-reactively → collectAsState.
+- `DefaultLocale`: number formatting now uses Locale.ROOT. `RestrictedApi` on `dispatchKeyEvent` suppressed with
+  justification (public platform API; lint flags androidx.core's override).
+
+Build/test (actual, `--rerun-tasks --no-build-cache`)
+- `:core:test` 68/68, `:app:testDebugUnitTest` 64/64, `:app:lintDebug` 0 errors (remaining warnings: newer dependency
+  versions available, ApplySharedPref for the intentional synchronous crash write, DataExtractionRules, monochrome icon).
+- `:app:assembleDebug` → app-debug.apk 9,593,811 bytes. `:app:assembleRelease` (R8 minify + resource shrink, debug-signed)
+  → app-release.apk 1,354,424 bytes. aapt2: no user permissions; FileProvider not exported; R8 mapping keeps the
+  kotlinx.serialization serializers for settings, session and library.
+
+Not verified
+- No physical device/emulator: neither APK has been launched. Release (R8) build behaviour on a device is unverified.
+
+Next: none in DEVELOPMENT_PHASES.md. Suggested: run docs/HARDWARE_TEST_CHECKLIST.md on an ARM64 phone with video output
+and Winlator; then real release signing.

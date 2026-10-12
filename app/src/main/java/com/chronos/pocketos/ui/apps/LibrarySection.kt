@@ -105,6 +105,8 @@ fun LibrarySection(onShowRuntime: () -> Unit) {
 @Composable
 private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
     val app = LocalPocketOs.current
+    val store by app.runtime.store.collectAsState()
+    val availability by app.runtime.availability.collectAsState()
     val context = LocalContext.current
     when (state) {
         ImportState.Idle -> {}
@@ -153,7 +155,7 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                             Text("Higher than recommended for this phone; it may be slow.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    if (app.runtime.store.value == null) {
+                    if (store == null) {
                         Text("No shared folder is chosen yet, so the program will be added as Needs Setup. Choose the folder in Runtime.", style = MaterialTheme.typography.bodySmall)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -175,7 +177,7 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                     app.imports.assess(e).nextSteps.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    if (app.runtime.availability.value is RuntimeAvailability.Installed && e?.status == AppStatus.READY) {
+                    if (availability is RuntimeAvailability.Installed && e?.status == AppStatus.READY) {
                         Button(onClick = { app.runtime.launchIntent()?.let { runCatching { context.startActivity(it) } } }) { Text("Open ${app.runtime.runtime.name}") }
                     } else if (e?.status == AppStatus.NEEDS_SETUP) {
                         Button(onClick = onShowRuntime) { Text("Go to setup") }
@@ -234,6 +236,8 @@ private fun Findings(fileName: String, size: Long, r: PeReport) {
 @Composable
 private fun EntryDetails(e: LibraryEntry, onShowRuntime: () -> Unit, onRemoved: () -> Unit) {
     val app = LocalPocketOs.current
+    val store by app.runtime.store.collectAsState()
+    val availability by app.runtime.availability.collectAsState()
     val context = LocalContext.current
     var showLog by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -247,10 +251,10 @@ private fun EntryDetails(e: LibraryEntry, onShowRuntime: () -> Unit, onRemoved: 
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
             if (e.status != AppStatus.UNSUPPORTED) {
-                if (app.runtime.availability.value is RuntimeAvailability.Installed) {
+                if (availability is RuntimeAvailability.Installed) {
                     Button(onClick = { app.runtime.launchIntent()?.let { runCatching { context.startActivity(it) } } }, modifier = Modifier.testTag("entry_open_runtime")) { Text("Open ${app.runtime.runtime.name}") }
                 } else OutlinedButton(onClick = onShowRuntime) { Text("Set up runtime") }
-                if (e.stagedPath == null && app.runtime.store.value != null) {
+                if (e.stagedPath == null && store != null) {
                     OutlinedButton(onClick = { runCatching { restage.launch(arrayOf("*/*")) } }, modifier = Modifier.testTag("entry_stage")) { Text("Copy to shared folder…") }
                 }
                 if (e.stagedPath != null) {

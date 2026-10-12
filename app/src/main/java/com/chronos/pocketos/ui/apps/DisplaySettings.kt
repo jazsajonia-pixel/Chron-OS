@@ -45,7 +45,7 @@ fun DisplaySettingsSection() {
     val decision by app.capabilities.decision.collectAsState()
     val ext = caps.externalDisplay
     val scale = app.uiScaleForExternal(s)
-    SliderRow("Desktop size on monitor", scale, 0.75f..1.6f, String.format("%.0f%%", scale * 100) + if (s.uiScaleOverride == null) " (auto)" else "") { v ->
+    SliderRow("Desktop size on monitor", scale, 0.75f..1.6f, String.format(java.util.Locale.ROOT, "%.0f%%", scale * 100) + if (s.uiScaleOverride == null) " (auto)" else "") { v ->
         app.settings.update { it.copy(uiScaleOverride = v) }
     }
     if (s.uiScaleOverride != null) {

@@ -13,7 +13,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
 
 /** Lightweight service locator; avoids a DI framework dependency. */
-class PocketOsApp : Application() {
+open class PocketOsApp : Application() {
     lateinit var settings: SettingsRepository
         private set
     lateinit var shell: ShellController

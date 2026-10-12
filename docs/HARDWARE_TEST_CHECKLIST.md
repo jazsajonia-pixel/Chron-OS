@@ -37,3 +37,28 @@ no Bluetooth/USB peripherals). Run them on real hardware and record the results 
 - [ ] Follow docs/PHASE5_RUNTIME.md "How to verify on a real phone"; record whether the sample result says "Verified".
 - [ ] Confirm Winlator sees files written by PocketOS in `Download/PocketOS` (D: drive).
 - [ ] Paste a real Winlator log into "Explain a runtime error" and note whether the explanation was helpful.
+
+## PC Apps library (Phase 6)
+- [ ] PC Apps → Library → Add program → pick a real `.exe`: findings appear, nothing runs, no other app opens.
+- [ ] Confirm without Winlator → "Needs setup" with steps. Install Winlator, choose folder → status becomes "Ready".
+- [ ] File appears in `Download/PocketOS/Apps/<name>/` and in Winlator's D: drive.
+- [ ] Pick a `.dll`, `.zip` or `.bat` → explained as unsupported; "Keep in library as unsupported" and "Cancel" both work.
+- [ ] Cancel during copy of a large file → no partial file left in the shared folder.
+- [ ] "It didn't work" → "Use suggestion 1"; after 3 suggestions no more are offered. "It worked" saves known-good settings.
+- [ ] Remove → "Remove and delete copied files" deletes the folder; "Remove only" keeps it.
+- [ ] Open a `.exe` from the Files app → the wizard opens.
+
+## Diagnostics and quality (Phase 7)
+- [ ] Diagnostics → Event log lists display/input/profile events; no personal paths or e-mail addresses appear.
+- [ ] Preview report → Share… opens Android's share sheet; the shared text matches the preview. Save to Home works.
+- [ ] Storage → Clear temporary files / Remove leftover folders change the shown sizes; other files in Download untouched.
+- [ ] There is no crash button; if PocketOS ever crashes, reopen it and check the crash notice in Diagnostics.
+- [ ] Rotate, split-screen, and return from background with windows open: nothing lost.
+- [ ] Run with many apps in background (low memory): PocketOS shows "Android reports low memory right now" (Settings → Performance) and keeps working.
+
+## Release readiness (Phase 8)
+- [ ] Fresh install shows the welcome tour; Skip, Back, Next, Get started; arrow keys/Enter/Esc with a keyboard.
+- [ ] TalkBack: launcher, taskbar buttons, window title buttons and tour pages are announced with meaningful labels.
+- [ ] Settings → Privacy text is visible; Android Settings → Apps → PocketOS → Permissions shows "No permissions".
+- [ ] Install `app-release.apk` (minified) and repeat the phone-only, Files and Settings checks (R8 build not run on a device yet).
+- [ ] Record: device model, Android version, adapter/monitor used, and results for each section.

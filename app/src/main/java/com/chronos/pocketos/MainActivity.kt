@@ -63,6 +63,9 @@ class MainActivity : ComponentActivity() {
                             overlay = { FloatingTouchpad() },
                             effects = decision.settings,
                         ) { w -> AppContent(w) }
+                        if (!settings.onboardingCompleted) {
+                            com.chronos.pocketos.ui.OnboardingTour { pocket.settings.update { it.copy(onboardingCompleted = true) } }
+                        }
                     }
                 }
             }
@@ -92,6 +95,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Activity.dispatchKeyEvent is public platform API; lint flags only androidx.core's @RestrictTo override (false positive).
+    @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (pocket.keys.handle(event)) return true
         // While the desktop is on the monitor, typing on a physical keyboard goes to the external desktop.

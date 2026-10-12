@@ -26,8 +26,8 @@ fun InputSettingsSection() {
     val input by app.input.summary.collectAsState()
     SectionTitle("Input and Smart Cursor")
     SwitchRow("Smart Cursor", "Show a pointer you control with the phone touchpad", s.showSmartCursor, tag = "toggle_cursor") { v -> app.settings.update { it.copy(showSmartCursor = v) } }
-    SliderRow("Pointer speed", s.cursorSpeed, 0.25f..3f, String.format("%.1f×", s.cursorSpeed), tag = "slider_speed") { v -> app.settings.update { it.copy(cursorSpeed = v) } }
-    SliderRow("Pointer size", s.cursorSizeScale, 0.75f..2.5f, String.format("%.1f×", s.cursorSizeScale)) { v -> app.settings.update { it.copy(cursorSizeScale = v) } }
+    SliderRow("Pointer speed", s.cursorSpeed, 0.25f..3f, String.format(java.util.Locale.ROOT, "%.1f×", s.cursorSpeed), tag = "slider_speed") { v -> app.settings.update { it.copy(cursorSpeed = v) } }
+    SliderRow("Pointer size", s.cursorSizeScale, 0.75f..2.5f, String.format(java.util.Locale.ROOT, "%.1f×", s.cursorSizeScale)) { v -> app.settings.update { it.copy(cursorSizeScale = v) } }
     SwitchRow("Tap to click", null, s.tapToClick, tag = "toggle_tap") { v -> app.settings.update { it.copy(tapToClick = v) } }
     SwitchRow("Natural scrolling", "Content follows your fingers", s.naturalScroll) { v -> app.settings.update { it.copy(naturalScroll = v) } }
     SwitchRow("Click buttons under the touchpad", null, s.touchpadClickButtons) { v -> app.settings.update { it.copy(touchpadClickButtons = v) } }
