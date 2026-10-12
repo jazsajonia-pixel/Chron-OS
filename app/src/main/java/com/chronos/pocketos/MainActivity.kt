@@ -106,6 +106,13 @@ class MainActivity : ComponentActivity() {
         return super.dispatchKeyEvent(event)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Back from a Windows program: record how it ended, verify the self-test, pick up newly installed programs.
+        pocket.runtime.refresh()
+        pocket.imports.onReturnFromRuntime()?.let(pocket.shell::showMessage)
+    }
+
     override fun onStop() {
         super.onStop()
         pocket.saveSession()

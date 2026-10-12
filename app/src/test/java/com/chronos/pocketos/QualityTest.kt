@@ -19,7 +19,6 @@ import com.chronos.pocketos.core.pe.InstallerType
 import com.chronos.pocketos.core.pe.Machine
 import com.chronos.pocketos.diag.DiagnosticsCenter
 import com.chronos.pocketos.diag.StorageManager
-import com.chronos.pocketos.runtime.FileStagingStore
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -66,7 +65,7 @@ class QualityTest {
         @Suppress("DEPRECATION") val send = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
         assertEquals(Intent.ACTION_SEND, send.action)
         @Suppress("DEPRECATION") val uri = send.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)!!
-        assertTrue(uri.toString().startsWith("content://com.chronos.pocketos.files/"))
+        assertTrue(uri.toString().startsWith("content://${app.packageName}.files/"))
         assertTrue(File(app.cacheDir, "reports").listFiles()!!.single().readText().contains("PocketOS compatibility report"))
         rule.onNodeWithTag("diag_preview").performScrollTo().performClick()
         rule.onNodeWithTag("diag_save").performClick()
@@ -74,16 +73,16 @@ class QualityTest {
     }
 
     @Test fun storageCleanupRemovesOnlyPocketOsTemporaryAndOrphanFiles() {
-        val shared = tmp.newFolder("shared")
+        val shared = app.runtime.programsDir
         File(shared, "Apps/Notes").mkdirs(); File(shared, "Apps/Notes/setup.exe").writeBytes(ByteArray(100))
         File(shared, "Apps/Old").mkdirs(); File(shared, "Apps/Old/old.exe").writeBytes(ByteArray(50))
         File(shared, "UserStuff.txt").writeText("keep me")
         File(app.cacheDir, "imports").mkdirs(); File(app.cacheDir, "imports/x.bin").writeBytes(ByteArray(1234))
-        rule.runOnIdle { app.runtime.useStore(FileStagingStore(shared, "primary:Download/PocketOS")); app.library.upsert(entry("e1", "Notes")) }
+        rule.runOnIdle { app.library.upsert(entry("e1", "Notes")) }
         val sm = StorageManager(app)
         val u = sm.usage()
         assertEquals(listOf("Old"), u.orphanFolders)
-        assertEquals(150L, u.sharedFolderBytes)
+        assertEquals(150L, u.programsBytes)
         assertEquals(1234L, u.tempImportBytes)
         assertEquals(1234L, sm.clearTemporary())
         assertEquals(1, sm.deleteOrphans())

@@ -45,8 +45,20 @@ open class PocketOsApp : Application() {
     /** True while the companion screen's own text box has focus (keys then stay on the phone). */
     @Volatile var companionTextFocused = false
 
+    /** The embedded Windows runtime runs in its own ":winruntime" process, which needs none of the desktop. */
+    val isRuntimeProcess: Boolean by lazy {
+        val name = if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName()
+        else runCatching { java.io.File("/proc/self/cmdline").readText().trim('\u0000') }.getOrDefault("")
+        name.endsWith(":winruntime")
+    }
+
+    /** Overridden by tests with a fake; the real backend drives the embedded Wine/Box64 runtime. */
+    open fun createRuntimeBackend(): com.chronos.pocketos.runtime.RuntimeBackend =
+        com.chronos.pocketos.runtime.EmbeddedWinlatorBackend(this)
+
     override fun onCreate() {
         super.onCreate()
+        if (isRuntimeProcess) return
         settings = SettingsRepository(this)
         diagnostics = com.chronos.pocketos.diag.DiagnosticsCenter(this)
         diagnostics.installCrashHandler()
@@ -62,14 +74,13 @@ open class PocketOsApp : Application() {
             this, { displays.displays.value }, { settings.settings.value.profileChoice }, displays.supportsActivitiesOnSecondaryDisplays,
         )
         capabilities.startListening()
-        runtime = com.chronos.pocketos.runtime.RuntimeManager(this) { capabilities.capabilities.value.abis }
+        runtime = com.chronos.pocketos.runtime.RuntimeManager(this, createRuntimeBackend(), appScope, { capabilities.capabilities.value.abis }, home.root)
         library = com.chronos.pocketos.library.LibraryRepository(File(filesDir, "library.json"))
         imports = com.chronos.pocketos.library.ImportManager(this, library, runtime, appScope, {
             com.chronos.pocketos.core.library.RuntimeProfile.safeDefault(capabilities.decision.value.profile)
         })
         imports.cleanupTemp() // crash recovery: remove half-finished imports
-        appScope.launch { runtime.availability.collect { imports.refreshAll(); diagnostics.add("runtime", it.toString()) } }
-        appScope.launch { runtime.store.collect { imports.refreshAll() } }
+        appScope.launch { runtime.state.collect { if (it !is com.chronos.pocketos.core.runtime.RuntimeState.Installing) { imports.refreshAll(); diagnostics.add("runtime", it.toString()) } } }
         com.chronos.pocketos.ui.apps.FileOpenHooks.onWindowsExecutable = { _, uri, name ->
             imports.begin(uri, name)
             shell.openApp(com.chronos.pocketos.shell.AppIds.WINDOWS_APPS)

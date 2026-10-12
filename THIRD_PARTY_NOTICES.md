@@ -15,7 +15,9 @@ build host only.
 ## Not bundled — user-installed separately
 | Component | Licence | Notes |
 |---|---|---|
-| Winlator — https://github.com/brunodev85/winlator | LGPL-2.1 (per its repository) | PocketOS only detects it (`<queries>` for `com.winlator`) and launches its main screen when the user asks. No code is copied or bundled |
-| Wine, Box64 (inside Winlator) | LGPL-2.1+, MIT | Shipped by Winlator, not by PocketOS |
+| Winlator (winlator-app, commit 3981d86) — https://github.com/brunodev85/winlator-app | LGPL-2.1 | **Bundled** as the `winruntime/` module with modifications (see `winruntime/MODIFICATIONS.md`); full source is in this repository |
+| Wine 10.10 — https://www.winehq.org | LGPL-2.1+ | Bundled inside the runtime archives (prebuilt by Winlator) |
+| Box64 0.4.4 — https://github.com/ptitSeb/box64 | MIT | Bundled inside the runtime archives |
+| Mesa (Turnip, VirGL, Zink), virglrenderer, DXVK, VKD3D-Proton, glibc, PulseAudio, FluidSynth | MIT / LGPL / zlib (per project) | Bundled inside the runtime archives / native libraries, unmodified except for the install-path retargeting |
 
 PocketOS uses no Microsoft code or branding. "Windows" is used only descriptively for the file format.

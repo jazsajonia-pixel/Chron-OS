@@ -33,19 +33,26 @@ no Bluetooth/USB peripherals). Run them on real hardware and record the results 
       (behaviour of Presentation windows while the activity is stopped varies by device).
 - [ ] Note where the on-screen keyboard appears when a text field on the monitor is focused.
 
-## Windows runtime (ARM64 phone with Winlator installed)
-- [ ] Follow docs/PHASE5_RUNTIME.md "How to verify on a real phone"; record whether the sample result says "Verified".
-- [ ] Confirm Winlator sees files written by PocketOS in `Download/PocketOS` (D: drive).
-- [ ] Paste a real Winlator log into "Explain a runtime error" and note whether the explanation was helpful.
+## Built-in Windows runtime (ARM64 phone, PocketOS 0.2.0)
+- [ ] Uninstall PocketOS 0.1.0 (`com.chronos.pocketos`) first; install 0.2.0 (`com.chron.os`). Note any "older Android version" notice.
+- [ ] PC Apps → Runtime → "Set up": progress reaches 100 %, status "Ready". Record the time it took and free space before/after.
+- [ ] "Run self-test": a full-screen Windows desktop opens, the sample runs, PocketOS returns and shows "Passed". Record time to first start.
+- [ ] "Open Windows desktop": the Windows file manager opens; drives D: (programs) and E: (PocketOS Home) are visible.
+- [ ] Touch moves the mouse, tap clicks; back gesture opens the runtime menu; keyboard appears from the menu; "Exit" returns to PocketOS.
+- [ ] Press Home while a program runs, then reopen PocketOS: the program is still running (notification shown).
+- [ ] Paste a real runtime log (menu → Logs) into "Explain a runtime error" and note whether the explanation was helpful.
+- [ ] Record GPU (Adreno/Mali) and whether "Compatibility graphics" changes anything for a program that draws wrongly.
 
-## PC Apps library (Phase 6)
-- [ ] PC Apps → Library → Add program → pick a real `.exe`: findings appear, nothing runs, no other app opens.
-- [ ] Confirm without Winlator → "Needs setup" with steps. Install Winlator, choose folder → status becomes "Ready".
-- [ ] File appears in `Download/PocketOS/Apps/<name>/` and in Winlator's D: drive.
+## PC Apps library
+- [ ] PC Apps → Library → Add program → pick a real `.exe`: findings appear before anything runs.
+- [ ] Before runtime setup → "Needs setup" with "Set up runtime" button. After setup → "Ready" with Run / Install.
+- [ ] Install a real installer (e.g. 7-Zip, Notepad++): the installer window opens; after it finishes, PocketOS lists the installed program.
+- [ ] Run that installed program from the library; save a file to E: and find it in PocketOS Files.
+- [ ] Installer that makes no shortcut: "Find installed programs" offers its .exe from Program Files.
 - [ ] Pick a `.dll`, `.zip` or `.bat` → explained as unsupported; "Keep in library as unsupported" and "Cancel" both work.
-- [ ] Cancel during copy of a large file → no partial file left in the shared folder.
-- [ ] "It didn't work" → "Use suggestion 1"; after 3 suggestions no more are offered. "It worked" saves known-good settings.
-- [ ] Remove → "Remove and delete copied files" deletes the folder; "Remove only" keeps it.
+- [ ] Cancel during copy of a large file → no partial file left behind (Diagnostics → Storage shows no leftovers).
+- [ ] "It didn't work" → "Try the next fix"; the next start uses the new settings; after 3 fixes no more are offered. "It worked" saves known-good settings.
+- [ ] Remove → "Remove and delete PocketOS's copy" deletes the folder; "Remove only" keeps it.
 - [ ] Open a `.exe` from the Files app → the wizard opens.
 
 ## Diagnostics and quality (Phase 7)
@@ -59,6 +66,6 @@ no Bluetooth/USB peripherals). Run them on real hardware and record the results 
 ## Release readiness (Phase 8)
 - [ ] Fresh install shows the welcome tour; Skip, Back, Next, Get started; arrow keys/Enter/Esc with a keyboard.
 - [ ] TalkBack: launcher, taskbar buttons, window title buttons and tour pages are announced with meaningful labels.
-- [ ] Settings → Privacy text is visible; Android Settings → Apps → PocketOS → Permissions shows "No permissions".
+- [ ] Settings → Privacy text is visible; Android Settings → Apps → PocketOS → Permissions shows no user-granted permissions (network/foreground service are install-time only).
 - [ ] Install `app-release.apk` (minified) and repeat the phone-only, Files and Settings checks (R8 build not run on a device yet).
 - [ ] Record: device model, Android version, adapter/monitor used, and results for each section.

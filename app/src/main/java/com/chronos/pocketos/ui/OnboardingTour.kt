@@ -59,10 +59,10 @@ private val pages = listOf(
         "If your phone supports video output (for example USB-C DisplayPort or screen casting), PocketOS can show the desktop on the monitor " +
             "while the phone becomes a touchpad. Many phones do not support video output; Settings → Display shows what yours reports."),
     TourPage("PC programs",
-        "PocketOS can examine .exe and .msi files and prepare them for a separate, free compatibility app (Winlator, 64-bit ARM phones only). " +
-            "PocketOS never runs these files itself. Many programs will not work, and results differ between phones."),
+        "PocketOS runs .exe and .msi files with its built-in Windows runtime (Wine + Box64, 64-bit ARM phones only). " +
+            "Files are checked before they run, and each program runs in its own process. Many programs work, some will not, and results differ between phones."),
     TourPage("Your privacy",
-        "PocketOS asks for no permissions, shows no ads and contains no analytics. Nothing is uploaded. " +
+        "PocketOS shows no ads and contains no analytics. It uses network access only for Windows programs that go online. " +
             "Diagnostics stay on this phone unless you choose to share a report, which you can preview first."),
 )
 

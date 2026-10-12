@@ -11,12 +11,12 @@ import kotlinx.serialization.json.Json
 
 enum class AppStatus(val label: String) { READY("Ready"), NEEDS_SETUP("Needs Setup"), UNSUPPORTED("Unsupported"), FAILED("Failed") }
 
-/** What the user reported after trying the program in the runtime. PocketOS cannot observe arbitrary programs. */
+/** What the user reported after trying the program. PocketOS can see that it started and exited, not whether it worked. */
 enum class UserResult { WORKED, DID_NOT_WORK }
 
-enum class GraphicsChoice(val label: String) { RUNTIME_DEFAULT("Runtime default"), SAFER("Safer driver (e.g. VirGL)") }
+enum class GraphicsChoice(val label: String) { RUNTIME_DEFAULT("Automatic graphics"), SAFER("Compatibility graphics (VirGL + WineD3D)") }
 
-/** Settings recommended for the runtime. PocketOS cannot set them inside the runtime; the user applies them there. */
+/** Settings PocketOS applies to the built-in runtime every time it starts this program. */
 @Serializable
 data class RuntimeProfile(
     val width: Int = 1280,
@@ -50,9 +50,19 @@ data class LibraryEntry(
     val installer: InstallerType,
     val status: AppStatus,
     val statusDetail: String,
-    /** Path relative to the shared folder, e.g. "Apps/Sample Notes/setup.exe". Null if not copied. */
+    /** Path relative to PocketOS's programs folder (drive D: in the runtime), e.g. "Apps/Sample Notes/setup.exe". */
     val stagedPath: String? = null,
-    val runtimeId: String = "winlator",
+    /** For programs an installer created: the shortcut file inside the runtime that starts it. */
+    val shortcutPath: String? = null,
+    /** For programs an installer created: the library id of that installer. */
+    val installedFromId: String? = null,
+    val iconPath: String? = null,
+    /** True once the installer has been run at least once. */
+    val installerRan: Boolean = false,
+    val lastRunAt: Long? = null,
+    /** Exit code of the last session, when the runtime reported one. */
+    val lastExitCode: Int? = null,
+    val runtimeId: String = "builtin",
     val profile: RuntimeProfile = RuntimeProfile(),
     val knownGood: RuntimeProfile? = null,
     val recoveryStep: Int = 0,
@@ -61,6 +71,9 @@ data class LibraryEntry(
     val updatedAt: Long,
     val log: List<LogLine> = emptyList(),
 ) {
+    /** Installers and .msi packages are "installed"; everything else is "run". */
+    val isInstaller: Boolean get() = shortcutPath == null && (kind == FileKind.MSI_PACKAGE || installer != InstallerType.NONE)
+
     fun withLog(now: Long, text: String) = copy(updatedAt = now, log = (log + LogLine(now, text)).takeLast(MAX_LOG))
 
     companion object { const val MAX_LOG = 100 }
@@ -76,7 +89,7 @@ object LibraryCodec {
 }
 
 /** Environment facts needed to decide an entry's status. */
-data class SetupEnvironment(val runtimeInstalled: Boolean, val runtimeCompatibleDevice: Boolean, val sharedFolderChosen: Boolean)
+data class SetupEnvironment(val runtimeReady: Boolean, val runtimeCompatibleDevice: Boolean)
 
 data class Assessment(val status: AppStatus, val detail: String, val nextSteps: List<String>)
 
@@ -101,21 +114,23 @@ object Compatibility {
         if (e.userResult == UserResult.DID_NOT_WORK) {
             return Assessment(AppStatus.FAILED, "You reported that it did not work with ${e.profile.label}.", Recovery.nextAdvice(e))
         }
-        if (!env.runtimeCompatibleDevice) return Assessment(AppStatus.NEEDS_SETUP, "This phone cannot use the supported runtime.", listOf("A 64-bit ARM phone is required."))
+        if (!env.runtimeCompatibleDevice) return Assessment(AppStatus.NEEDS_SETUP, "This phone cannot run Windows programs.", listOf("A 64-bit ARM phone is required."))
         val steps = buildList {
-            if (!env.runtimeInstalled) add("Install the compatibility runtime (PC Apps → Runtime).")
-            if (!env.sharedFolderChosen) add("Choose the shared folder (PC Apps → Runtime).")
-            if (e.stagedPath == null) add("Copy the program to the shared folder.")
+            if (!env.runtimeReady) add("Set up the Windows runtime once (PC Apps → Runtime). It is built in; nothing else to download.")
+            if (e.stagedPath == null && e.shortcutPath == null) add("Import the file again so PocketOS can keep a copy.")
         }
-        if (steps.isNotEmpty()) return Assessment(AppStatus.NEEDS_SETUP, "A few steps are left before you can try it.", steps)
-        val tryIt = if (e.kind == FileKind.MSI_PACKAGE || e.installer != InstallerType.NONE)
-            "Open the runtime and run the installer. After installing, start the program from the runtime."
-        else "Open the runtime and start the program."
-        val detail = when (e.userResult) {
-            UserResult.WORKED -> "You reported it works with ${e.profile.label}."
-            else -> "Ready to try. Whether it works depends on the program; it has not been tested on this phone."
+        if (steps.isNotEmpty()) return Assessment(AppStatus.NEEDS_SETUP, "One step is left before you can start it.", steps)
+        val tryIt = when {
+            e.isInstaller && e.installerRan -> "Tap Install again to repeat the installation, or start the programs it installed from your library."
+            e.isInstaller -> "Tap Install. Programs it installs are added to your library automatically."
+            else -> "Tap Run. It opens full screen; use the menu (back gesture) to show the keyboard or exit."
         }
-        return Assessment(AppStatus.READY, detail, listOf(tryIt, "Suggested runtime settings: ${e.profile.label}.", "Come back and tell PocketOS whether it worked."))
+        val detail = when {
+            e.userResult == UserResult.WORKED -> "You reported it works with ${e.profile.label}."
+            e.lastExitCode != null && e.lastExitCode != 0 -> "Last start ended with exit code ${e.lastExitCode}. If it did not work, tell PocketOS so it can try safer settings."
+            else -> "Ready. Whether it works depends on the program; it has not been tested on this phone yet."
+        }
+        return Assessment(AppStatus.READY, detail, listOf(tryIt, "Settings used: ${e.profile.label}.", "Afterwards, tell PocketOS whether it worked."))
     }
 }
 
@@ -131,14 +146,14 @@ object Recovery {
 
     val steps: List<Step> = listOf(
         Step("Lower the resolution to 1024×768", lowerTo(1024, 768)),
-        Step("Switch to the safer graphics driver") { it.copy(graphics = GraphicsChoice.SAFER) },
+        Step("Switch to the compatibility graphics driver") { it.copy(graphics = GraphicsChoice.SAFER) },
         Step("Lower the resolution to 800×600", lowerTo(800, 600)),
     )
     val MAX_STEPS get() = steps.size
 
     fun nextAdvice(e: LibraryEntry): List<String> =
-        if (e.recoveryStep < steps.size) listOf("Next suggestion (${e.recoveryStep + 1} of ${steps.size}): ${steps[e.recoveryStep].description}.", "Apply it in the runtime's settings, try again, then report the result.")
-        else listOf("All ${steps.size} suggestions were tried. This program may not be compatible with the runtime on this phone.", "You can keep the entry, view its log, or remove it.")
+        if (e.recoveryStep < steps.size) listOf("Next fix (${e.recoveryStep + 1} of ${steps.size}): ${steps[e.recoveryStep].description}.", "Tap “Try the next fix”: PocketOS applies it automatically and you can start the program again.")
+        else listOf("All ${steps.size} fixes were tried. This program may not be compatible with the runtime on this phone.", "You can keep the entry, view its log, or remove it.")
 
     /** Applies the next step; returns null when the sequence is exhausted (no endless retries). */
     fun applyNext(e: LibraryEntry, now: Long): LibraryEntry? {

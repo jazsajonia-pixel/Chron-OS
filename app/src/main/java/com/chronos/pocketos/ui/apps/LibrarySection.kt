@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -43,7 +45,7 @@ import com.chronos.pocketos.core.library.Recovery
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.pe.FileKind
 import com.chronos.pocketos.core.pe.PeReport
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
+import com.chronos.pocketos.core.runtime.RuntimeState
 import com.chronos.pocketos.library.ImportState
 import com.chronos.pocketos.ui.components.KeyValue
 import com.chronos.pocketos.ui.components.SectionTitle
@@ -79,7 +81,7 @@ fun LibrarySection(onShowRuntime: () -> Unit) {
         }, enabled = import is ImportState.Idle || import is ImportState.Done || import is ImportState.Failed, modifier = Modifier.testTag("lib_add")) { Text("Add program…") }
     }
     Text(
-        "Add a .exe or .msi file. PocketOS reads it to describe it but never runs it. You start programs yourself in the runtime.",
+        "Add a .exe or .msi file. PocketOS checks it first without running it, keeps a private copy, and runs or installs it with the built-in Windows runtime.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     ImportWizard(import, onShowRuntime)
@@ -91,7 +93,12 @@ fun LibrarySection(onShowRuntime: () -> Unit) {
         Card(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selected = if (selected == e.id) null else e.id }.testTag("lib_entry")) {
             Column(Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(e.displayName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    EntryIcon(e)
+                    Column(Modifier.weight(1f)) {
+                        Text(e.displayName, style = MaterialTheme.typography.titleSmall)
+                        e.installedFromId?.let { from -> lib.entries.firstOrNull { it.id == from }?.let { Text("Installed by ${it.displayName}", style = MaterialTheme.typography.labelSmall) } }
+                    }
+                    if (e.status == AppStatus.READY) StartButton(e, compact = true)
                     StatusChip(e.status)
                 }
                 Text(e.statusDetail, style = MaterialTheme.typography.bodySmall)
@@ -105,9 +112,7 @@ fun LibrarySection(onShowRuntime: () -> Unit) {
 @Composable
 private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
     val app = LocalPocketOs.current
-    val store by app.runtime.store.collectAsState()
-    val availability by app.runtime.availability.collectAsState()
-    val context = LocalContext.current
+    val runtimeState by app.runtime.state.collectAsState()
     when (state) {
         ImportState.Idle -> {}
         is ImportState.Reading -> WizardCard("Step 1 of 3 · Reading ${state.fileName}") {
@@ -138,7 +143,7 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                     SectionTitle("Step 3 of 3 · Add to library")
                     OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("wiz_name"))
                     Text("Suggested runtime settings: ${profile.label}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
-                    Text("Chosen for your ${decision.profile.label} profile. You set these inside the runtime.", style = MaterialTheme.typography.bodySmall)
+                    Text("Chosen for your ${decision.profile.label} profile. PocketOS applies them each time it starts the program.", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { advanced = !advanced }, modifier = Modifier.testTag("wiz_advanced")) { Text(if (advanced) "Hide advanced settings" else "Advanced settings") }
                     if (advanced) {
                         Text("Resolution", style = MaterialTheme.typography.labelLarge)
@@ -155,8 +160,8 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                             Text("Higher than recommended for this phone; it may be slow.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         }
                     }
-                    if (store == null) {
-                        Text("No shared folder is chosen yet, so the program will be added as Needs Setup. Choose the folder in Runtime.", style = MaterialTheme.typography.bodySmall)
+                    if (runtimeState !is RuntimeState.Ready) {
+                        Text("The Windows runtime is not set up yet. You can add the program now and set up the runtime afterwards.", style = MaterialTheme.typography.bodySmall)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                         Button(onClick = { app.imports.confirm(name, profile) }, modifier = Modifier.testTag("wiz_confirm")) { Text("Add to library") }
@@ -165,7 +170,7 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                 }
             }
         }
-        is ImportState.Copying -> WizardCard("Copying ${state.name} to the shared folder") {
+        is ImportState.Copying -> WizardCard("Copying ${state.name} into PocketOS") {
             Progress(state.bytes, state.total)
             OutlinedButton(onClick = app.imports::cancel, modifier = Modifier.testTag("wiz_cancel")) { Text("Cancel") }
         }
@@ -177,8 +182,8 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                     app.imports.assess(e).nextSteps.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                    if (availability is RuntimeAvailability.Installed && e?.status == AppStatus.READY) {
-                        Button(onClick = { app.runtime.launchIntent()?.let { runCatching { context.startActivity(it) } } }) { Text("Open ${app.runtime.runtime.name}") }
+                    if (e?.status == AppStatus.READY) {
+                        StartButton(e, onStarted = app.imports::dismiss)
                     } else if (e?.status == AppStatus.NEEDS_SETUP) {
                         Button(onClick = onShowRuntime) { Text("Go to setup") }
                     }
@@ -229,40 +234,44 @@ private fun Findings(fileName: String, size: Long, r: PeReport) {
         r.version.companyName?.let { KeyValue("Publisher (unverified)", it) }
         (r.version.productVersion ?: r.version.fileVersion)?.let { KeyValue("Version", it) }
         r.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-        Text("Whether it works can only be known by trying it in the runtime.", style = MaterialTheme.typography.bodySmall)
+        Text("Whether it works can only be known by trying it.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 private fun EntryDetails(e: LibraryEntry, onShowRuntime: () -> Unit, onRemoved: () -> Unit) {
     val app = LocalPocketOs.current
-    val store by app.runtime.store.collectAsState()
-    val availability by app.runtime.availability.collectAsState()
-    val context = LocalContext.current
+    val runtimeState by app.runtime.state.collectAsState()
     var showLog by remember { mutableStateOf(false) }
     var confirmRemove by remember { mutableStateOf(false) }
     val restage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { app.imports.stageFromUri(e.id, it) } }
     val a = app.imports.assess(e)
     Column(Modifier.padding(top = 8.dp).testTag("entry_details")) {
         a.nextSteps.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-        e.stagedPath?.let { rel -> app.runtime.pathFor(rel)?.let { KeyValue("In the runtime", it.describe()) } }
+        e.stagedPath?.let { rel -> KeyValue("In Windows", app.runtime.windowsPathFor(rel)) }
         KeyValue("Settings", e.profile.label + (if (e.knownGood == e.profile) " (worked before)" else ""))
-        KeyValue("File", "${e.sourceFileName} · ${formatBytes(e.sizeBytes)} · SHA-256 ${e.sha256.take(12)}…")
+        if (e.shortcutPath == null) KeyValue("File", "${e.sourceFileName} · ${formatBytes(e.sizeBytes)} · SHA-256 ${e.sha256.take(12)}…")
+        e.lastRunAt?.let { KeyValue("Last started", DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(it)) + (e.lastExitCode?.let { c -> " · exit code $c" } ?: "")) }
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
             if (e.status != AppStatus.UNSUPPORTED) {
-                if (availability is RuntimeAvailability.Installed) {
-                    Button(onClick = { app.runtime.launchIntent()?.let { runCatching { context.startActivity(it) } } }, modifier = Modifier.testTag("entry_open_runtime")) { Text("Open ${app.runtime.runtime.name}") }
-                } else OutlinedButton(onClick = onShowRuntime) { Text("Set up runtime") }
-                if (e.stagedPath == null && store != null) {
-                    OutlinedButton(onClick = { runCatching { restage.launch(arrayOf("*/*")) } }, modifier = Modifier.testTag("entry_stage")) { Text("Copy to shared folder…") }
+                if (runtimeState is RuntimeState.Ready) StartButton(e)
+                else OutlinedButton(onClick = onShowRuntime, modifier = Modifier.testTag("entry_setup_runtime")) { Text("Set up runtime") }
+                if (e.stagedPath == null && e.shortcutPath == null) {
+                    OutlinedButton(onClick = { runCatching { restage.launch(arrayOf("*/*")) } }, modifier = Modifier.testTag("entry_stage")) { Text("Copy file again…") }
                 }
-                if (e.stagedPath != null) {
+                if (e.isInstaller && e.installerRan && runtimeState is RuntimeState.Ready) {
+                    OutlinedButton(onClick = {
+                        val found = app.imports.findInstalledPrograms(e.id)
+                        app.shell.showMessage(if (found.isEmpty()) "No new programs found." else "Added: ${found.joinToString { it.displayName }}")
+                    }, modifier = Modifier.testTag("entry_find_installed")) { Text("Find installed programs") }
+                }
+                if (e.lastRunAt != null || e.userResult != null) {
                     OutlinedButton(onClick = { app.imports.reportWorked(e.id) }, modifier = Modifier.testTag("entry_worked")) { Text("It worked") }
                     OutlinedButton(onClick = { app.imports.reportFailed(e.id) }, modifier = Modifier.testTag("entry_failed")) { Text("It didn't work") }
                 }
                 if (e.status == AppStatus.FAILED && e.recoveryStep < Recovery.MAX_STEPS) {
-                    Button(onClick = { app.imports.applyNextRecovery(e.id) }, modifier = Modifier.testTag("entry_next_fix")) { Text("Use suggestion ${e.recoveryStep + 1}") }
+                    Button(onClick = { app.imports.applyNextRecovery(e.id) }, modifier = Modifier.testTag("entry_next_fix")) { Text("Try the next fix (${e.recoveryStep + 1} of ${Recovery.MAX_STEPS})") }
                 }
             }
             TextButton(onClick = { showLog = !showLog }, modifier = Modifier.testTag("entry_log")) { Text(if (showLog) "Hide log" else "Log") }
@@ -277,14 +286,40 @@ private fun EntryDetails(e: LibraryEntry, onShowRuntime: () -> Unit, onRemoved: 
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             title = { Text("Remove ${e.displayName}?") },
-            text = { Text("This removes it from PocketOS. Programs installed inside the runtime must be uninstalled there.") },
+            text = { Text(if (e.shortcutPath != null) "This removes the shortcut from PocketOS. The program stays installed in Windows until you run its uninstaller." else "This removes it from PocketOS. Programs it installed stay in your library.") },
             confirmButton = {
                 Row {
                     TextButton(onClick = { confirmRemove = false; app.shell.showMessage(app.imports.remove(e.id, deleteFiles = false)); onRemoved() }, modifier = Modifier.testTag("remove_keep_files")) { Text("Remove only") }
-                    if (e.stagedPath != null) TextButton(onClick = { confirmRemove = false; app.shell.showMessage(app.imports.remove(e.id, deleteFiles = true)); onRemoved() }, modifier = Modifier.testTag("remove_delete_files")) { Text("Remove and delete copied files") }
+                    if (e.stagedPath != null) TextButton(onClick = { confirmRemove = false; app.shell.showMessage(app.imports.remove(e.id, deleteFiles = true)); onRemoved() }, modifier = Modifier.testTag("remove_delete_files")) { Text("Remove and delete PocketOS's copy") }
                 }
             },
             dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
         )
     }
+}
+
+
+/** Run (programs) or Install (installers) inside the built-in runtime. */
+@Composable
+internal fun StartButton(e: LibraryEntry, compact: Boolean = false, onStarted: () -> Unit = {}) {
+    val app = LocalPocketOs.current
+    val context = LocalContext.current
+    val label = if (e.isInstaller) (if (e.installerRan) "Install again" else "Install") else "Run"
+    val onClick = {
+        val (intent, problem) = app.imports.start(e.id)
+        if (intent != null) { app.openRuntimeIntent(context, intent); onStarted() } else app.shell.showMessage(problem ?: "Could not start ${e.displayName}")
+    }
+    if (compact) androidx.compose.material3.FilledTonalButton(onClick = onClick, modifier = Modifier.padding(end = 6.dp).testTag("entry_quick_start")) { Text(label) }
+    else Button(onClick = onClick, modifier = Modifier.testTag("entry_start")) { Text(label) }
+}
+
+/** Icon the installer created for this program, if any. */
+@Composable
+private fun EntryIcon(e: LibraryEntry) {
+    val path = e.iconPath ?: return
+    val bmp = remember(path) { runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() } ?: return
+    androidx.compose.foundation.Image(
+        bmp.asImageBitmap(), contentDescription = null,
+        modifier = Modifier.padding(end = 8.dp).size(32.dp),
+    )
 }

@@ -1,34 +1,40 @@
-# PocketOS test APKs (0.1.0)
+# PocketOS test APKs
 
-Built from this commit's source by `./gradlew :app:assembleDebug :app:assembleRelease`. Both are signed with the
-Android **debug key** — for personal testing only, not for public distribution.
+## 0.2.0 — built-in Windows runtime (current)
+
+The 0.2.0 APKs contain the Windows runtime (Wine + Box64) and are 170–185 MB, above GitHub's 100 MB limit for files
+in a repository. Download them from the **[v0.2.0 pre-release](https://github.com/jazsajonia-pixel/Chron-OS/releases/tag/v0.2.0)**.
 
 | File | Use |
 |---|---|
-| `PocketOS-0.1.0-debug.apk` | **Install this one first.** Not minified, easiest to debug. |
-| `PocketOS-0.1.0-release.apk` | Minified (R8) build. Not yet tried on any device — please test it too and report differences. |
+| `PocketOS-0.2.0-debug.apk` | **Install this one first.** Not minified, easiest to debug. |
+| `PocketOS-0.2.0-release.apk` | Minified (R8) build, same features. |
 
-Both use the same key, so one can be installed over the other.
+Both are signed with the Android **debug key** — for personal testing only. They need a **64-bit ARM** phone.
 
-## Install
-- **On the phone:** download the APK from GitHub (open the file → "View raw"/download), open it, and allow
-  "Install unknown apps" for your browser or file manager when asked.
-- **With a computer:** enable Developer options → USB debugging, then `adb install -r apk/PocketOS-0.1.0-debug.apk`.
-- If Android says the app conflicts with an existing package: `adb uninstall com.chronos.pocketos` (or uninstall PocketOS
-  from Settings) and install again.
+**Uninstall 0.1.0 first.** The package name changed from `com.chronos.pocketos` to `com.chron.os` (required by the
+runtime, see `docs/PHASE6_EMBEDDED_RUNTIME.md`), so 0.2.0 installs as a separate app.
 
-## Trying Windows programs
-PocketOS examines `.exe`/`.msi` files and prepares them; it does **not** run them itself. To run them you need:
-1. A **64-bit ARM** phone (PC Apps → Runtime tells you whether yours qualifies).
-2. **Winlator** installed separately from https://github.com/brunodev85/winlator/releases (large download, ~150 MB).
-3. In PocketOS: PC Apps → Runtime → choose the shared folder (`Download/PocketOS`), then run the built-in sample test.
-4. PC Apps → Library → Add program → pick your `.exe`. In Winlator, open it from the **D:** drive
-   (`D:\PocketOS\Apps\<name>\`). Then press "It worked" or "It didn't work" in PocketOS.
+### Running Windows programs (no other app needed)
+1. PC Apps → Runtime → **Set up** (one time, ~520 MB, takes a minute or two). Then **Run self-test**.
+2. PC Apps → Library → **Add program** → pick a `.exe` or `.msi`.
+3. Tap **Install** (installers) or **Run** (programs). Programs an installer creates appear in the library.
+4. In the program: touch moves the mouse, tap clicks, back gesture opens the menu (keyboard, exit).
+5. Back in PocketOS, tap "It worked" or "It didn't work" (PocketOS then applies the next fix automatically).
 
-Many programs will not work; results vary by phone. Please note your phone model, Android version and results using
-`docs/HARDWARE_TEST_CHECKLIST.md`.
+Not every Windows program works; results vary by phone. Please record results in `docs/HARDWARE_TEST_CHECKLIST.md`.
 
-## SHA-256
+### SHA-256
+```
+466e689999fef19f520158cc92ccfb55593b788b85e0856c89da2bf1bee2e929  PocketOS-0.2.0-debug.apk
+2e887b077f1d45d328a60c03aaac69691fab0d09e6529e32264630f2c05a4833  PocketOS-0.2.0-release.apk
+```
+
+## 0.1.0 (previous, Winlator handoff)
+
+`PocketOS-0.1.0-debug.apk` and `PocketOS-0.1.0-release.apk` in this folder. 0.1.0 did not run programs itself; it
+prepared them for the separate Winlator app.
+
 ```
 e83c22af33cd6e761c6455db0886a25e665455bdd21c9ad6218b44502d61233d  apk/PocketOS-0.1.0-debug.apk
 768054288c9db60900b2f3f0ec82aa551bc28e70b3753b294535ea54179a4750  apk/PocketOS-0.1.0-release.apk

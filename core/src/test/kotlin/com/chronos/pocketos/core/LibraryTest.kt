@@ -27,7 +27,7 @@ class LibraryTest {
         id = "1", displayName = "X", sourceFileName = "x.exe", sha256 = "00", sizeBytes = 10, kind = kind, machine = Machine.X64,
         installer = installer, status = AppStatus.NEEDS_SETUP, statusDetail = "", stagedPath = staged, createdAt = 0, updatedAt = 0,
     )
-    private val allSet = SetupEnvironment(runtimeInstalled = true, runtimeCompatibleDevice = true, sharedFolderChosen = true)
+    private val allSet = SetupEnvironment(runtimeReady = true, runtimeCompatibleDevice = true)
 
     @Test fun unsupportedKindsAreLabeledHonestly() {
         listOf(FileKind.WINDOWS_LIBRARY, FileKind.DOS_PROGRAM, FileKind.WIN16_PROGRAM, FileKind.ARCHIVE, FileKind.SCRIPT, FileKind.NOT_WINDOWS, FileKind.DAMAGED).forEach {
@@ -38,10 +38,12 @@ class LibraryTest {
     }
 
     @Test fun needsSetupListsMissingSteps() {
-        val a = Compatibility.assess(entry(staged = null), SetupEnvironment(false, true, false))
+        val a = Compatibility.assess(entry(staged = null), SetupEnvironment(false, true))
         assertEquals(AppStatus.NEEDS_SETUP, a.status)
-        assertEquals(3, a.nextSteps.size)
-        assertEquals(AppStatus.NEEDS_SETUP, Compatibility.assess(entry(), SetupEnvironment(true, false, true)).status)
+        assertEquals(2, a.nextSteps.size)
+        assertEquals(AppStatus.NEEDS_SETUP, Compatibility.assess(entry(), SetupEnvironment(true, false)).status)
+        // Programs created by an installer have no copied file; their shortcut is enough.
+        assertEquals(AppStatus.READY, Compatibility.assess(entry(staged = null).copy(shortcutPath = "/x/Notes.desktop"), allSet).status)
     }
 
     @Test fun readyNeverClaimsCompatibility() {
@@ -49,7 +51,9 @@ class LibraryTest {
         assertEquals(AppStatus.READY, a.status)
         assertTrue(a.detail.contains("has not been tested"))
         val inst = Compatibility.assess(entry(installer = InstallerType.NSIS), allSet)
-        assertTrue(inst.nextSteps.first().contains("installer"))
+        assertTrue(inst.nextSteps.first().contains("Tap Install"))
+        assertTrue(Compatibility.assess(entry(), allSet).nextSteps.first().contains("Tap Run"))
+        assertTrue(Compatibility.assess(entry(installer = InstallerType.NSIS).copy(installerRan = true), allSet).nextSteps.first().contains("Install again"))
         val worked = Compatibility.assess(Recovery.markWorked(entry(), 5), allSet)
         assertTrue(worked.detail.contains("You reported it works"))
     }

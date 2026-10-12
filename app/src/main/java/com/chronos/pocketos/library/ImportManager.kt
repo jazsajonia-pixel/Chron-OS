@@ -14,7 +14,14 @@ import com.chronos.pocketos.core.library.safeFolderName
 import com.chronos.pocketos.core.pe.FileByteSource
 import com.chronos.pocketos.core.pe.PeInspector
 import com.chronos.pocketos.core.pe.PeReport
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
+import com.chronos.pocketos.core.pe.FileKind
+import com.chronos.pocketos.core.pe.InstallerType
+import com.chronos.pocketos.core.pe.Machine
+import com.chronos.pocketos.core.runtime.InstalledProgramDiscovery
+import com.chronos.pocketos.core.runtime.InstalledShortcut
+import com.chronos.pocketos.core.runtime.RuntimeState
+import com.chronos.pocketos.core.runtime.SampleResult
+import com.chronos.pocketos.core.runtime.SessionPurpose
 import com.chronos.pocketos.runtime.RuntimeManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +52,8 @@ sealed interface ImportState {
 
 /**
  * Imports untrusted Windows files. Steps: copy to private cache while hashing → inspect bytes (never executed) →
- * user confirms → copy into the shared folder → library entry. Every step can be cancelled; temp files are removed.
+ * user confirms → copy into PocketOS's programs folder (drive D: of the built-in runtime) → library entry.
+ * Every step can be cancelled; temp files are removed. Entries are then run or installed inside PocketOS.
  */
 class ImportManager(
     private val context: Context,
@@ -61,12 +69,8 @@ class ImportManager(
     private val importDir = File(context.cacheDir, "imports")
 
     fun environment(): SetupEnvironment {
-        val a = runtime.availability.value
-        return SetupEnvironment(
-            runtimeInstalled = a is RuntimeAvailability.Installed,
-            runtimeCompatibleDevice = a !is RuntimeAvailability.DeviceIncompatible,
-            sharedFolderChosen = runtime.store.value != null,
-        )
+        val s = runtime.state.value
+        return SetupEnvironment(runtimeReady = s is RuntimeState.Ready, runtimeCompatibleDevice = s !is RuntimeState.Unsupported)
     }
 
     fun assess(e: LibraryEntry): Assessment = Compatibility.assess(e, environment())
@@ -118,7 +122,7 @@ class ImportManager(
         }
         job = scope.launch {
             try {
-                if (runtime.store.value != null) entry = stage(entry, c.temp)
+                entry = stage(entry, c.temp)
                 entry = refreshed(entry)
                 library.upsert(entry)
                 _state.value = ImportState.Done(entry.id)
@@ -127,14 +131,14 @@ class ImportManager(
             } catch (e: Exception) {
                 val failed = entry.copy(status = AppStatus.FAILED, statusDetail = "Copying failed: ${e.message}").withLog(clock(), "Copy failed: ${e.message}")
                 library.upsert(failed)
-                _state.value = ImportState.Failed("Copying to the shared folder failed: ${e.message}", listOf("Check free space and that the shared folder still exists, then use \"Copy to shared folder\" on the entry."))
+                _state.value = ImportState.Failed("Copying into PocketOS failed: ${e.message}", listOf("Check that the phone has free space, then import the file again."))
             } finally {
                 cleanupTemp()
             }
         }
     }
 
-    /** Copies an entry's file to the shared folder later (e.g. after the folder is chosen). Requires the source again. */
+    /** Copies an entry's file into PocketOS again (e.g. after its copy was deleted). Requires the same source file. */
     fun stageFromUri(entryId: String, uri: Uri) {
         val e = library.get(entryId) ?: return
         job = scope.launch {
@@ -154,7 +158,7 @@ class ImportManager(
     }
 
     private suspend fun stage(e: LibraryEntry, temp: File): LibraryEntry {
-        val store = runtime.store.value ?: return e
+        val store = runtime.programs
         val rel = "Apps/${safeFolderName(e.displayName)}/${safeFolderName(e.sourceFileName)}"
         _state.value = ImportState.Copying(e.displayName, 0, temp.length())
         withContext(Dispatchers.IO) {
@@ -168,8 +172,7 @@ class ImportManager(
                 override fun close() = inner.close()
             })
         }
-        val where = runtime.pathFor(rel)
-        return e.copy(stagedPath = rel).withLog(clock(), "Copied to the shared folder: $rel" + (where?.let { " (in the runtime: $it)" } ?: ""))
+        return e.copy(stagedPath = rel).withLog(clock(), "Copied into PocketOS (in Windows: ${runtime.windowsPathFor(rel)})")
     }
 
     fun refreshed(e: LibraryEntry): LibraryEntry {
@@ -189,22 +192,107 @@ class ImportManager(
         library.upsert(refreshed(next)); return true
     }
 
-    /** Removes the entry and, if asked, the files PocketOS copied. Data inside the runtime cannot be removed from here. */
+    /** Removes the entry and, if asked, the copy PocketOS keeps. Programs installed inside Windows stay installed. */
     fun remove(id: String, deleteFiles: Boolean): String {
         val e = library.get(id) ?: return "Already removed"
         var msg = "Removed ${e.displayName} from the library."
         if (deleteFiles && e.stagedPath != null) {
-            val store = runtime.store.value
             val folder = e.stagedPath!!.substringBeforeLast('/')
-            msg += if (store != null && runCatching { store.delete(folder) }.getOrDefault(false)) " Copied files were deleted."
-            else " Copied files could not be deleted (shared folder unavailable)."
+            msg += if (runCatching { runtime.programs.delete(folder) }.getOrDefault(false)) " Its copy was deleted." else " Its copy could not be deleted."
         }
-        if (e.installer != com.chronos.pocketos.core.pe.InstallerType.NONE || e.kind == com.chronos.pocketos.core.pe.FileKind.MSI_PACKAGE) {
-            msg += " If you installed it inside the runtime, uninstall it there too."
-        }
+        if (e.isInstaller && e.installerRan) msg += " Programs it installed stay in your library until you remove them."
+        if (e.shortcutPath != null) msg += " It is still installed in Windows; run its uninstaller from the Windows desktop to remove it completely."
         library.remove(id)
         return msg
     }
+
+    // ---- Starting programs inside the built-in runtime ----
+
+    /**
+     * Prepares a start of [id] (Run for programs, Install for installers) with the entry's current settings.
+     * Returns the intent to open, or a message explaining why it cannot start yet.
+     */
+    fun start(id: String): Pair<android.content.Intent?, String?> {
+        val e = library.get(id) ?: return null to "This entry no longer exists."
+        if (!runtime.isReady) return null to "Set up the Windows runtime first (PC Apps \u2192 Runtime)."
+        if (e.status == AppStatus.UNSUPPORTED) return null to e.statusDetail
+        val purpose = if (e.isInstaller) SessionPurpose.INSTALL else SessionPurpose.RUN
+        // .desktop shortcuts carry their own start command; .lnk and .exe files are started directly.
+        val lnk = e.shortcutPath?.takeIf { it.endsWith(".lnk", ignoreCase = true) || it.endsWith(".exe", ignoreCase = true) }
+        val desktop = e.shortcutPath?.takeIf { lnk == null }
+        if (e.stagedPath != null && !File(runtime.programsDir, e.stagedPath!!).isFile) {
+            return null to "PocketOS's copy of ${e.sourceFileName} is missing. Import the file again."
+        }
+        val intent = runtime.prepareLaunch(purpose, e.id, e.stagedPath, desktop, e.profile)
+            ?.also { if (lnk != null) it.putExtra("exec_path", lnk) }
+            ?: return null to "The Windows runtime is not ready."
+        val now = clock()
+        library.modify(id) {
+            it.copy(lastRunAt = now, installerRan = it.installerRan || purpose == SessionPurpose.INSTALL)
+                .withLog(now, (if (purpose == SessionPurpose.INSTALL) "Started the installer" else "Started") + " with ${it.profile.label}")
+        }
+        return intent to null
+    }
+
+    /**
+     * Called whenever PocketOS comes back to the front. If a program PocketOS started has exited, records the
+     * result; after an installer, adds the programs it installed to the library. Returns a message for the user.
+     */
+    fun onReturnFromRuntime(): String? {
+        val finished = runtime.consumeFinishedSession()
+        if (finished == null) {
+            // The sample writes its marker immediately, so it can be verified even if the session is still open.
+            if (runtime.pendingSession()?.purpose == SessionPurpose.SAMPLE && runtime.checkSample() == SampleResult.VERIFIED) {
+                return "Self-test passed: the sample Windows program ran on this phone."
+            }
+            return null
+        }
+        val p = finished.pending
+        val code = finished.result?.exitStatus
+        val now = clock()
+        return when (p.purpose) {
+            SessionPurpose.SAMPLE -> when (runtime.checkSample()) {
+                SampleResult.VERIFIED -> "Self-test passed: the sample Windows program ran on this phone."
+                else -> "The self-test program did not confirm that it ran. Open the Runtime tab for details."
+            }
+            SessionPurpose.DESKTOP -> null
+            SessionPurpose.RUN -> {
+                val e = p.entryId?.let(library::get) ?: return null
+                library.modify(e.id) { refreshed(it.copy(lastExitCode = code).withLog(now, "Exited" + (code?.let { c -> " with code $c" } ?: ""))) }
+                "${e.displayName} closed. Did it work? Tell PocketOS in PC Apps."
+            }
+            SessionPurpose.INSTALL -> {
+                val e = p.entryId?.let(library::get) ?: return null
+                val added = addInstalledPrograms(e, p.shortcutsBefore)
+                library.modify(e.id) { refreshed(it.copy(lastExitCode = code).withLog(now, "Installer exited" + (code?.let { c -> " with code $c" } ?: "") + "; found ${added.size} new program(s)")) }
+                if (added.isEmpty()) "The installer closed. No new program shortcuts were found; tap \u201cFind installed programs\u201d if it installed something."
+                else "Installed and added to your library: ${added.joinToString { it.displayName }}."
+            }
+        }
+    }
+
+    /** Looks for shortcuts that are not in the library yet and adds them as programs installed by [installerId]. */
+    fun findInstalledPrograms(installerId: String): List<LibraryEntry> {
+        val e = library.get(installerId) ?: return emptyList()
+        val known = library.state.value.entries.mapNotNull { it.shortcutPath }.toSet()
+        return addInstalledPrograms(e, known)
+    }
+
+    private fun addInstalledPrograms(installer: LibraryEntry, before: Set<String>): List<LibraryEntry> {
+        val known = library.state.value.entries.mapNotNull { it.shortcutPath }.toSet()
+        val found = InstalledProgramDiscovery.newPrograms(before + known, runCatching { runtime.shortcuts() }.getOrDefault(emptyList()))
+        val now = clock()
+        val added = found.map { sc -> installedEntry(installer, sc, now) }
+        added.forEach { library.upsert(refreshed(it)) }
+        return added
+    }
+
+    private fun installedEntry(installer: LibraryEntry, sc: InstalledShortcut, now: Long) = LibraryEntry(
+        id = UUID.randomUUID().toString(), displayName = sc.name, sourceFileName = File(sc.path).name, sha256 = "", sizeBytes = 0,
+        kind = FileKind.WINDOWS_PROGRAM, machine = Machine.UNKNOWN, installer = InstallerType.NONE,
+        status = AppStatus.NEEDS_SETUP, statusDetail = "", shortcutPath = sc.path, installedFromId = installer.id, iconPath = sc.iconPath,
+        profile = installer.knownGood ?: installer.profile, createdAt = now, updatedAt = now,
+    ).withLog(now, "Installed by ${installer.displayName}")
 
     fun cancel() {
         job?.cancel(); job = null

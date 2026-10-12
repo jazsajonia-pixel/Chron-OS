@@ -1,73 +1,111 @@
 package com.chronos.pocketos.core.runtime
 
 /**
- * PocketOS does not contain a Windows runtime. It hands staged programs to a separately installed,
- * openly licensed runtime app and never reports success it cannot observe. See docs/PHASE5_RUNTIME.md.
+ * PocketOS includes its own Windows runtime: Wine and Box64 running inside the app (the open-source Winlator
+ * runtime, LGPL-2.1, embedded as the :winruntime module). No separate app is needed. PocketOS still never reports
+ * success it cannot observe: a program "works" only when the user says so, and the self-test proves execution
+ * with a marker file. See docs/PHASE6_EMBEDDED_RUNTIME.md.
  */
 data class RuntimeInfo(
     val id: String,
     val name: String,
-    val packageName: String,
+    val engine: String,
     val license: String,
     val homepage: String,
     val requiredAbi: String,
-    /** Windows drive letter the runtime maps to the phone's public Download folder by default. */
-    val downloadsDrive: Char?,
+    /** Windows drive with the programs PocketOS imported. */
+    val programsDrive: Char,
+    /** Windows drive with the PocketOS Home folder, so programs can open and save the user's files. */
+    val homeDrive: Char,
+    /** Approximate space the system files need once installed. */
+    val installedBytes: Long,
 )
 
 object RuntimeCatalog {
-    val WINLATOR = RuntimeInfo(
-        id = "winlator",
-        name = "Winlator",
-        packageName = "com.winlator",
-        license = "LGPL-2.1",
-        homepage = "https://github.com/brunodev85/winlator",
+    val BUILTIN = RuntimeInfo(
+        id = "builtin",
+        name = "PocketOS Windows runtime",
+        engine = "Wine 10.10 + Box64 0.4.4",
+        license = "LGPL-2.1 (based on Winlator)",
+        homepage = "https://github.com/brunodev85/winlator-app",
         requiredAbi = "arm64-v8a",
-        downloadsDrive = 'D',
+        programsDrive = 'D',
+        homeDrive = 'E',
+        installedBytes = 520L * 1024 * 1024,
     )
-    val all = listOf(WINLATOR)
+    val all = listOf(BUILTIN)
 }
 
-sealed interface RuntimeAvailability {
-    data class Installed(val versionName: String?, val versionCode: Long) : RuntimeAvailability
-    data object NotInstalled : RuntimeAvailability
-    data class DeviceIncompatible(val reason: String) : RuntimeAvailability
+/** State of the built-in runtime on this phone. */
+sealed interface RuntimeState {
+    /** The phone cannot run the runtime at all (it needs a 64-bit ARM processor). */
+    data class Unsupported(val reason: String) : RuntimeState
+    /** The system files (Linux userland, Wine, Box64) have not been unpacked yet. */
+    data object NotInstalled : RuntimeState
+    data class Installing(val percent: Int, val stage: String) : RuntimeState
+    data object Ready : RuntimeState
+    data class Failed(val message: String) : RuntimeState
 }
 
-object RuntimeAvailabilityRules {
-    fun evaluate(runtime: RuntimeInfo, deviceAbis: List<String>, installedVersion: Pair<String?, Long>?): RuntimeAvailability {
+object RuntimeStateRules {
+    fun initial(runtime: RuntimeInfo, deviceAbis: List<String>, systemFilesInstalled: Boolean, containerReady: Boolean): RuntimeState {
         if (runtime.requiredAbi !in deviceAbis) {
-            return RuntimeAvailability.DeviceIncompatible(
-                "${runtime.name} needs a 64-bit ARM phone (${runtime.requiredAbi}). This device reports: ${deviceAbis.joinToString().ifEmpty { "unknown" }}.",
+            return RuntimeState.Unsupported(
+                "The Windows runtime needs a 64-bit ARM phone (${runtime.requiredAbi}). This device reports: ${deviceAbis.joinToString().ifEmpty { "unknown" }}.",
             )
         }
-        return installedVersion?.let { RuntimeAvailability.Installed(it.first, it.second) } ?: RuntimeAvailability.NotInstalled
+        return if (systemFilesInstalled && containerReady) RuntimeState.Ready else RuntimeState.NotInstalled
     }
 }
 
-/** Where a staged file appears inside the runtime, derived from the Android storage document id. */
-sealed interface RuntimePath {
-    data class Mapped(val windowsPath: String) : RuntimePath
-    /** The folder is not on a default drive; the user must add it as a drive in the runtime's container settings. */
-    data class NeedsDrive(val androidPath: String) : RuntimePath
+/** Windows paths for files PocketOS keeps in its own programs folder (mapped as [RuntimeInfo.programsDrive]). */
+object RuntimePaths {
+    fun windowsPath(drive: Char, relative: String): String =
+        "$drive:\\" + relative.trim('/').replace('/', '\\')
 }
 
-object RuntimePaths {
+/** What a launch was for, so PocketOS knows what to do when the program exits. */
+enum class SessionPurpose { RUN, INSTALL, SAMPLE, DESKTOP }
+
+/** A shortcut (or, as a fallback, a program file) found inside the runtime after an installer ran. */
+data class InstalledShortcut(
+    val name: String,
+    /** Absolute path of the .desktop, .lnk or .exe file inside the runtime's container. */
+    val path: String,
+    val iconPath: String? = null,
+) {
+    val isExecutable: Boolean get() = path.endsWith(".exe", ignoreCase = true)
+}
+
+object InstalledProgramDiscovery {
+    private val noise = Regex(
+        """\b(uninstall\w*|uninst\w*|remove|readme|read me|help|manual|documentation|license|licence|website|web site|homepage|support|changelog|release notes|what's new)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private val helperExe = Regex(
+        """^(unins\d*|setup|install|installer|update|updater|autoupdate|crashreporter|crashhandler|vc_?redist.*|dxsetup|dotnetfx.*|helper|launcherhelper)$""",
+        RegexOption.IGNORE_CASE,
+    )
+    const val MAX_EXECUTABLES = 5
+
     /**
-     * [treeDocumentId] is the ExternalStorageProvider id, e.g. "primary:Download/PocketOS".
-     * [relative] is the path inside that folder, e.g. "Sample/pocketos-sample.exe".
+     * Programs that appeared since [before]. Shortcuts (Start Menu / Desktop) are preferred, without uninstallers,
+     * manuals or web links. Only if an installer created no shortcuts at all are new .exe files in Program Files
+     * offered instead (at most [MAX_EXECUTABLES], skipping uninstallers, updaters and redistributables).
      */
-    fun locate(runtime: RuntimeInfo, treeDocumentId: String, relative: String): RuntimePath {
-        val volume = treeDocumentId.substringBefore(':', "")
-        val path = treeDocumentId.substringAfter(':', "").trim('/')
-        val rel = relative.trim('/')
-        val drive = runtime.downloadsDrive
-        if (volume == "primary" && drive != null && (path == "Download" || path.startsWith("Download/"))) {
-            val inner = (path.removePrefix("Download").trim('/') + "/" + rel).trim('/')
-            return RuntimePath.Mapped("$drive:\\" + inner.replace('/', '\\'))
+    fun newPrograms(before: Set<String>, after: List<InstalledShortcut>): List<InstalledShortcut> {
+        val fresh = after.filter { it.path !in before }
+        val shortcuts = fresh.filter { !it.isExecutable && !noise.containsMatchIn(it.name) }
+        val picked = shortcuts.ifEmpty {
+            fresh.filter { it.isExecutable && !noise.containsMatchIn(it.name) && !helperExe.matches(it.name) }
+                .sortedBy { it.path.count { c -> c == '/' } }
+                .take(MAX_EXECUTABLES)
         }
-        val root = if (volume == "primary") "/storage/emulated/0" else "/storage/$volume"
-        return RuntimePath.NeedsDrive(("$root/$path/$rel").replace("//", "/"))
+        // Prefer .desktop entries (they carry icons) over the raw .lnk with the same name.
+        return picked.sortedBy { if (it.path.endsWith(".desktop")) 0 else 1 }
+            .distinctBy { it.name.lowercase() }
+            .sortedBy { it.name.lowercase() }
     }
 }
 
@@ -100,25 +138,25 @@ object RuntimeLogTranslator {
     private val rules = listOf(
         Rule(Regex("""Library (\S+?\.dll) \(which is needed by [^)]*\) not found""", RegexOption.IGNORE_CASE)) {
             "A required component is missing (${it.groupValues[1]})" to
-                "The program needs an extra Windows component. Its installer or the runtime's component settings may provide it."
+                "The program needs an extra Windows component. Its installer may provide it, or add it in PC Apps → Runtime → Advanced runtime settings."
         },
         Rule(Regex("""Bad EXE format for (.+)|Application could not be started, or no application associated""", RegexOption.IGNORE_CASE)) {
             "This file is not a program the runtime can start" to "It may be damaged, for another kind of computer, or not a Windows program."
         },
         Rule(Regex("""could not load kernel32\.dll""", RegexOption.IGNORE_CASE)) {
-            "The runtime is not set up correctly" to "Reopen the runtime app so it can finish setting up, or reinstall it."
+            "The runtime is not set up correctly" to "Repair the runtime in PC Apps → Runtime, then try again."
         },
         Rule(Regex("""Unhandled page fault|unhandled exception""", RegexOption.IGNORE_CASE)) {
-            "The program crashed" to "Try the safe settings preset, or check whether the program is known to work with the runtime."
+            "The program crashed" to "Tap “Didn't work”: PocketOS tries safer settings on the next start."
         },
         Rule(Regex("""(?:cannot find|could not find|File not found)[: ]+['"]?([^'"\r\n]+)""", RegexOption.IGNORE_CASE)) {
-            "A file could not be found (${it.groupValues[1].trim()})" to "Make sure the program's whole folder was copied, not only the .exe."
+            "A file could not be found (${it.groupValues[1].trim()})" to "Some programs need their whole folder. Import the installer instead of only the .exe."
         },
         Rule(Regex("""Unsupported (?:16-bit|DOS) application|win16 application""", RegexOption.IGNORE_CASE)) {
             "Very old 16-bit program" to "16-bit and DOS programs are not supported."
         },
         Rule(Regex("""(?:Vulkan|vkCreateInstance).*(?:fail|error)|(?:wined3d|d3d).*(?:failed|not supported)""", RegexOption.IGNORE_CASE)) {
-            "The graphics system could not start" to "Try a different graphics driver in the runtime, or a lower resolution."
+            "The graphics system could not start" to "Tap “Didn't work”: PocketOS switches to the compatibility graphics driver and a lower resolution next time."
         },
         Rule(Regex("""Out of memory|ENOMEM|Cannot allocate memory""", RegexOption.IGNORE_CASE)) {
             "The phone ran out of memory" to "Close other apps and windows, then try the Battery Saver profile."

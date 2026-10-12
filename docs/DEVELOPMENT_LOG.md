@@ -239,3 +239,26 @@ Not verified
 
 Next: none in DEVELOPMENT_PHASES.md. Suggested: run docs/HARDWARE_TEST_CHECKLIST.md on an ARM64 phone with video output
 and Winlator; then real release signing.
+
+
+## 2026-10-12 — 0.2.0: built-in Windows runtime (no separate Winlator app)
+
+Goal from the owner: stop relying on the Winlator app; install and run `.exe` files inside PocketOS.
+
+- New module `winruntime/` = Winlator 11 app source (LGPL-2.1, commit 3981d86) converted to an Android library; all its
+  components run in the `:winruntime` process. Changes listed in `winruntime/MODIFICATIONS.md`.
+- Application id changed to `com.chron.os` (same length as `com.winlator`) so the prebuilt userland could be
+  retargeted byte-for-byte (`tools/runtime/retarget_assets.py`, 257 occurrences, verified none left). targetSdk 28,
+  arm64-v8a only.
+- `RuntimeManager` rewritten around `RuntimeBackend` (real: `EmbeddedWinlatorBackend`; tests: `FakeRuntimeBackend`):
+  one-tap setup with progress, Windows environment with D: = programs, E: = PocketOS Home, launches with session ids,
+  session results read on resume, self-test run and verified automatically, settings/fixes applied on each start.
+- `ImportManager`: always keeps a copy; Run/Install; installer sessions snapshot shortcuts and add new programs
+  (`InstalledProgramDiscovery`, with a Program Files fallback); exit codes recorded; "Find installed programs".
+- UI: Runtime tab (Set up / Repair / Open Windows desktop / Advanced runtime settings / self-test), Library Run/Install
+  buttons, installed-by labels and icons.
+- Verification: Box64 + Wine 10.10 from the retargeted path under qemu-aarch64 ran the self-test, an NSIS installer,
+  the installed program and an MSI; a new shortcut-creating installer fixture showed Wine writes `.lnk` + `.desktop`
+  files. New opt-in `EmbeddedRuntimeIntegrationTest` exercises the real backend with the real assets. 70 core + 66 app
+  tests pass; debug and release APKs build (release keeps all runtime classes).
+- Not verified: Android X server/graphics/audio on a real phone (no ARM64 device available).

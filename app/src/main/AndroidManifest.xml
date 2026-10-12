@@ -2,14 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- PocketOS requests no runtime permissions. Device folders are accessed only through the
-         Storage Access Framework after the user picks them. -->
+         Storage Access Framework after the user picks them. The built-in Windows runtime (module :winruntime)
+         adds network, audio, wake-lock and foreground-service permissions for the programs it runs. -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.type.pc" android:required="false" />
-
-    <!-- Package visibility: only the supported compatibility runtime is queried (Android 11+). -->
-    <queries>
-        <package android:name="com.winlator" />
-    </queries>
 
     <application
         android:name=".PocketOsApp"

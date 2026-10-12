@@ -1,10 +1,5 @@
 package com.chronos.pocketos
 
-import android.content.Intent
-import android.content.pm.ActivityInfo
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
-import android.content.pm.ResolveInfo
 import android.net.Uri
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
@@ -22,7 +17,7 @@ import com.chronos.pocketos.core.library.GraphicsChoice
 import com.chronos.pocketos.core.pe.InstallerType
 import com.chronos.pocketos.library.ImportState
 import com.chronos.pocketos.library.LibraryRepository
-import com.chronos.pocketos.runtime.FileStagingStore
+import com.chronos.pocketos.core.runtime.InstalledShortcut
 import com.chronos.pocketos.ui.apps.FileOpenHooks
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -43,7 +38,7 @@ import java.io.File
 class LibraryUiTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     @get:Rule val tmp = TemporaryFolder()
-    private val app get() = ApplicationProvider.getApplicationContext<PocketOsApp>()
+    private val app get() = ApplicationProvider.getApplicationContext<TestPocketOsApp>()
 
     private fun fixture(name: String): File {
         val f = File(tmp.root, name)
@@ -51,17 +46,13 @@ class LibraryUiTest {
         return f
     }
 
+    /** Built-in runtime set up (fake backend); returns PocketOS's programs folder (drive D:). */
     private fun readyEnvironment(): File {
         ReflectionHelpers.setStaticField(Build::class.java, "SUPPORTED_ABIS", arrayOf("arm64-v8a"))
-        val spm = shadowOf(app.packageManager)
-        spm.installPackage(PackageInfo().apply { packageName = "com.winlator"; versionName = "11.2"; applicationInfo = ApplicationInfo().apply { packageName = "com.winlator" } })
-        spm.addResolveInfoForIntent(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("com.winlator"), ResolveInfo().apply {
-            activityInfo = ActivityInfo().apply { packageName = "com.winlator"; name = "com.winlator.MainActivity"; applicationInfo = ApplicationInfo().apply { packageName = "com.winlator" } }
-        })
-        val dir = tmp.newFolder("shared")
-        rule.runOnIdle { app.capabilities.recheck("test"); app.runtime.refresh(); app.runtime.useStore(FileStagingStore(dir, "primary:Download/PocketOS")) }
+        app.fakeRuntime.makeReady()
+        rule.runOnIdle { app.capabilities.recheck("test"); app.runtime.refresh() }
         rule.waitForIdle()
-        return dir
+        return app.runtime.programsDir
     }
 
     private fun open() { rule.runOnIdle { app.shell.openApp("winapps") }; rule.waitForIdle() }
@@ -102,8 +93,9 @@ class LibraryUiTest {
         val e = app.library.state.value.entries.single()
         assertEquals("Sample Notes", e.displayName)
         assertEquals(AppStatus.NEEDS_SETUP, e.status)
-        assertNull(e.stagedPath)
-        assertTrue(app.imports.assess(e).nextSteps.any { it.contains("Install the compatibility runtime") })
+        // PocketOS always keeps its own copy, so the program can start as soon as the runtime is set up.
+        assertArrayEquals(fixture("hello_console_x64.exe").readBytes(), File(app.runtime.programsDir, e.stagedPath!!).readBytes())
+        assertTrue(app.imports.assess(e).nextSteps.any { it.contains("Set up the Windows runtime") })
         // Persisted
         assertEquals(1, LibraryRepository(File(app.filesDir, "library.json")).state.value.entries.size)
         // Temp copy removed
@@ -124,8 +116,62 @@ class LibraryUiTest {
         assertTrue(e.statusDetail.contains("has not been tested"))
         val staged = File(shared, e.stagedPath!!)
         assertArrayEquals(fixture("sample_setup_nsis.exe").readBytes(), staged.readBytes())
-        assertTrue(app.imports.assess(e).nextSteps.first().contains("installer"))
+        assertTrue(app.imports.assess(e).nextSteps.first().contains("Install"))
         rule.onNodeWithTag("wiz_done_detail").assertIsDisplayed()
+    }
+
+    @Test fun installerRunsInsidePocketOsAndInstalledProgramsAreAdded() {
+        readyEnvironment(); open()
+        importFile("sample_setup_nsis.exe")
+        rule.onNodeWithTag("wiz_confirm").performScrollTo().performClick()
+        waitDone()
+        val installer = app.library.state.value.entries.single()
+        rule.onNodeWithTag("entry_start").performScrollTo().assertTextContains("Install").performClick()
+        val started = shadowOf(app).nextStartedActivity
+        assertEquals("com.winlator.XServerDisplayActivity", started.component?.className)
+        assertEquals(File(app.runtime.programsDir, installer.stagedPath!!).path, started.getStringExtra("exec_path"))
+        assertEquals(installer.profile, app.fakeRuntime.appliedProfiles.last())
+
+        // The installer creates a program shortcut and an uninstaller shortcut, then exits.
+        val root = "/data/data/com.chron.os/files/rootfs/home/xuser-1"
+        app.fakeRuntime.shortcutList += InstalledShortcut("Sample Notes", "$root/.wine/drive_c/users/xuser/Desktop/Sample Notes.desktop")
+        app.fakeRuntime.shortcutList += InstalledShortcut("Uninstall Sample Notes", "$root/.local/share/applications/wine/Programs/Sample Notes/Uninstall Sample Notes.desktop")
+        app.fakeRuntime.finishSession(0)
+        val msg = rule.runOnIdle { app.imports.onReturnFromRuntime() }!!
+        assertTrue(msg, msg.contains("Installed and added to your library: Sample Notes"))
+        val entries = app.library.state.value.entries
+        assertEquals(2, entries.size)
+        val program = entries.single { it.id != installer.id }
+        assertEquals(installer.id, program.installedFromId)
+        assertEquals(AppStatus.READY, program.status)
+        assertTrue(app.library.get(installer.id)!!.installerRan)
+
+        // Starting the installed program uses its shortcut.
+        val (intent, problem) = rule.runOnIdle { app.imports.start(program.id) }
+        assertNull(problem)
+        assertEquals(program.shortcutPath, intent!!.getStringExtra("shortcut_path"))
+        // Nothing new appears when looking again.
+        assertTrue(rule.runOnIdle { app.imports.findInstalledPrograms(installer.id) }.isEmpty())
+    }
+
+    @Test fun programExitIsRecordedAndCannotStartWithoutRuntime() {
+        ReflectionHelpers.setStaticField(Build::class.java, "SUPPORTED_ABIS", arrayOf("arm64-v8a"))
+        rule.runOnIdle { app.capabilities.recheck("test"); app.runtime.refresh() }
+        open()
+        importFile("hello_gui_x64.exe"); rule.onNodeWithTag("wiz_confirm").performScrollTo().performClick(); waitDone()
+        val id = app.library.state.value.entries.single().id
+        val (none, why) = rule.runOnIdle { app.imports.start(id) }
+        assertNull(none); assertTrue(why!!.contains("Set up the Windows runtime"))
+        readyEnvironment()
+        val (intent, _) = rule.runOnIdle { app.imports.start(id) }
+        assertTrue(intent!!.getBooleanExtra("pocketos_hosted", false))
+        app.fakeRuntime.finishSession(3)
+        assertTrue(rule.runOnIdle { app.imports.onReturnFromRuntime() }!!.contains("Did it work?"))
+        val e = app.library.get(id)!!
+        assertEquals(3, e.lastExitCode)
+        assertTrue(e.statusDetail.contains("exit code 3"))
+        // Only one result per session.
+        assertNull(rule.runOnIdle { app.imports.onReturnFromRuntime() })
     }
 
     @Test fun dllIsUnsupportedAndCancelLeavesNothing() {
@@ -164,16 +210,22 @@ class LibraryUiTest {
         readyEnvironment(); open()
         importFile("hello_gui_x64.exe"); rule.onNodeWithTag("wiz_confirm").performScrollTo().performClick(); waitDone()
         rule.runOnIdle { app.imports.dismiss() }
+        val id = app.library.state.value.entries.single().id
+        rule.runOnIdle { app.imports.start(id) }
+        app.fakeRuntime.finishSession(0)
+        rule.runOnIdle { app.imports.onReturnFromRuntime() }
         rule.onNodeWithTag("lib_entry").performClick()
         rule.onNodeWithTag("entry_failed").performScrollTo().performClick()
-        val id = app.library.state.value.entries.single().id
         assertEquals(AppStatus.FAILED, app.library.get(id)!!.status)
-        rule.onNodeWithText("1 of 3", substring = true, useUnmergedTree = true).assertExists()
+        rule.onNodeWithText("Next fix (1 of 3)", substring = true, useUnmergedTree = true).assertExists()
         rule.onNodeWithTag("entry_next_fix").performScrollTo().performClick()
         var e = app.library.get(id)!!
         assertEquals(1024 to 768, e.profile.width to e.profile.height)
         assertEquals(AppStatus.READY, e.status)
         assertTrue(e.log.any { it.text.startsWith("Recovery 1/3") })
+        // The fix is applied automatically on the next start.
+        rule.runOnIdle { app.imports.start(id) }
+        assertEquals(1024, app.fakeRuntime.appliedProfiles.last().width)
         repeat(2) { rule.runOnIdle { app.imports.reportFailed(id); app.imports.applyNextRecovery(id) } }
         e = app.library.get(id)!!
         assertEquals(GraphicsChoice.SAFER, e.profile.graphics); assertEquals(800, e.profile.width)

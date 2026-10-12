@@ -1,17 +1,16 @@
 package com.chronos.pocketos.ui.apps
 
-import android.content.ActivityNotFoundException
-import android.net.Uri
-import android.provider.DocumentsContract
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,99 +27,104 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.chronos.pocketos.LocalPocketOs
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
+import com.chronos.pocketos.PocketOsApp
+import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.RuntimeLogTranslator
-import com.chronos.pocketos.core.runtime.RuntimePath
+import com.chronos.pocketos.core.runtime.RuntimeState
 import com.chronos.pocketos.core.runtime.SampleResult
 import com.chronos.pocketos.ui.components.KeyValue
 import com.chronos.pocketos.ui.components.SectionTitle
 
-/** Human description of where a staged file is inside the runtime. */
-fun RuntimePath.describe(): String = when (this) {
-    is RuntimePath.Mapped -> windowsPath
-    is RuntimePath.NeedsDrive -> "Add $androidPath as a drive in the runtime's container settings"
+/** Opens an intent from the runtime, reporting failures instead of crashing. */
+internal fun PocketOsApp.openRuntimeIntent(context: Context, intent: Intent?, failure: String = "The Windows runtime could not be opened") {
+    if (intent == null) { shell.showMessage(failure); return }
+    runCatching { context.startActivity(intent) }.onFailure { shell.showMessage("$failure: ${it.message ?: it.javaClass.simpleName}") }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RuntimeSection() {
     val app = LocalPocketOs.current
     val rm = app.runtime
     val context = LocalContext.current
-    val availability by rm.availability.collectAsState()
-    val store by rm.store.collectAsState()
+    val state by rm.state.collectAsState()
     val sample by rm.sample.collectAsState()
+    val decision by app.capabilities.decision.collectAsState()
+    val profile = RuntimeProfile.safeDefault(decision.profile)
     var log by remember { mutableStateOf("") }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(rm::setWorkspace) }
 
-    SectionTitle("Compatibility runtime")
+    SectionTitle("Windows runtime")
     Text(
-        "PocketOS does not include a Windows runtime. It works with ${rm.runtime.name} (${rm.runtime.license}, open source), " +
-            "a separate app you install yourself. Many Windows programs will not run; results depend on the program and your phone.",
+        "PocketOS runs Windows programs itself, with a built-in runtime (${rm.runtime.engine}; ${rm.runtime.license}). " +
+            "No other app is needed. Many programs work, but not all: results depend on the program and your phone.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-    val statusText = when (val a = availability) {
-        is RuntimeAvailability.Installed -> "${rm.runtime.name} ${a.versionName ?: ""} is installed"
-        RuntimeAvailability.NotInstalled -> "${rm.runtime.name} is not installed"
-        is RuntimeAvailability.DeviceIncompatible -> a.reason
+    val statusText = when (val s = state) {
+        RuntimeState.Ready -> "Ready"
+        RuntimeState.NotInstalled -> "Not set up yet"
+        is RuntimeState.Installing -> "${s.stage}… ${s.percent}%"
+        is RuntimeState.Failed -> "Setup failed: ${s.message}"
+        is RuntimeState.Unsupported -> s.reason
     }
     Text(statusText, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(vertical = 6.dp).testTag("runtime_status"))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        when (availability) {
-            is RuntimeAvailability.Installed -> Button(onClick = {
-                rm.launchIntent()?.let { runCatching { context.startActivity(it) }.onFailure { app.shell.showMessage("Could not open ${rm.runtime.name}") } }
-                    ?: app.shell.showMessage("${rm.runtime.name} cannot be opened from here")
-            }, modifier = Modifier.testTag("runtime_open")) { Text("Open ${rm.runtime.name}") }
-            RuntimeAvailability.NotInstalled -> Button(onClick = {
-                try { context.startActivity(rm.downloadPageIntent()) } catch (_: ActivityNotFoundException) { app.shell.showMessage("No browser available") }
-            }, modifier = Modifier.testTag("runtime_get")) { Text("Get ${rm.runtime.name}") }
-            is RuntimeAvailability.DeviceIncompatible -> {}
+    (state as? RuntimeState.Installing)?.let {
+        LinearProgressIndicator(progress = { it.percent / 100f }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp).testTag("runtime_progress"))
+        Text("You can keep using PocketOS while this runs. It only happens once.", style = MaterialTheme.typography.bodySmall)
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        when (state) {
+            RuntimeState.NotInstalled, is RuntimeState.Failed -> Button(
+                onClick = { rm.install(profile) { ok -> app.shell.showMessage(if (ok) "The Windows runtime is ready." else "Setting up the Windows runtime failed.") } },
+                modifier = Modifier.testTag("runtime_install"),
+            ) { Text(if (state is RuntimeState.Failed) "Try again" else "Set up (about ${rm.runtime.installedBytes / (1024 * 1024)} MB)") }
+            RuntimeState.Ready -> {
+                Button(onClick = { app.openRuntimeIntent(context, rm.prepareDesktop(profile)) }, modifier = Modifier.testTag("runtime_desktop")) { Text("Open Windows desktop") }
+                OutlinedButton(onClick = { app.openRuntimeIntent(context, rm.advancedSettingsIntent()) }, modifier = Modifier.testTag("runtime_advanced")) { Text("Advanced runtime settings") }
+                OutlinedButton(onClick = { rm.install(profile) }, modifier = Modifier.testTag("runtime_repair")) { Text("Repair") }
+            }
+            else -> {}
         }
-        OutlinedButton(onClick = { rm.refresh() }, modifier = Modifier.testTag("runtime_refresh")) { Text("Check again") }
+    }
+    if (state is RuntimeState.Ready) {
+        KeyValue("Drive ${rm.runtime.programsDrive}:", "Programs you imported into PocketOS")
+        KeyValue("Drive ${rm.runtime.homeDrive}:", "Your PocketOS Home folder (open and save files from Windows programs)")
+        KeyValue("Drive C:", "Windows itself; installers put programs here")
     }
 
-    SectionTitle("Shared folder")
-    Text(
-        "Programs are copied to a folder both apps can see. Choose or create Download/PocketOS: ${rm.runtime.name} shows the " +
-            "Download folder as drive ${rm.runtime.downloadsDrive}:.",
-        style = MaterialTheme.typography.bodySmall,
-    )
-    KeyValue("Folder", store?.let { "${it.label} (${it.documentId})" } ?: "Not chosen")
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = {
-            val hint = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Download")
-            runCatching { picker.launch(hint) }.onFailure { app.shell.showMessage("No folder picker is available on this device") }
-        }, modifier = Modifier.testTag("runtime_choose_folder")) { Text(if (store == null) "Choose folder" else "Change folder") }
-        if (store != null) OutlinedButton(onClick = { rm.clearWorkspace() }) { Text("Forget folder") }
-    }
-
-    SectionTitle("Test with the sample program")
+    SectionTitle("Self-test")
     Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(12.dp)) {
             Text(
-                "The sample is a tiny Windows program made for PocketOS. When it really runs, it leaves a note that PocketOS reads back. " +
-                    "Nothing runs until you start it yourself inside ${rm.runtime.name}.",
+                "Runs a tiny Windows program made for PocketOS. When it really runs it leaves a note with a fresh code, " +
+                    "which PocketOS reads back. This proves Windows programs start on this phone.",
                 style = MaterialTheme.typography.bodySmall,
             )
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { runCatching { rm.stageSample() }.onFailure { app.shell.showMessage(it.message ?: "Could not copy the sample") } },
-                    enabled = store != null, modifier = Modifier.testTag("sample_stage"),
-                ) { Text(if (sample.staged) "Copy again" else "1. Copy sample") }
-                OutlinedButton(onClick = { rm.checkSample() }, enabled = sample.staged, modifier = Modifier.testTag("sample_check")) { Text("3. Check result") }
+                    onClick = { app.openRuntimeIntent(context, rm.prepareSampleRun(profile), "Set up the runtime first") },
+                    enabled = state is RuntimeState.Ready, modifier = Modifier.testTag("sample_run"),
+                ) { Text(if (sample.staged) "Run self-test again" else "Run self-test") }
+                OutlinedButton(onClick = { rm.checkSample() }, enabled = sample.staged, modifier = Modifier.testTag("sample_check")) { Text("Check result") }
             }
-            sample.path?.let { Text("2. In ${rm.runtime.name}, open a container and run: ${it.describe()}", modifier = Modifier.padding(top = 6.dp).testTag("sample_path")) }
             val resultText = when (sample.result) {
-                SampleResult.VERIFIED -> "Verified: the sample ran through ${rm.runtime.name}" + (sample.runtimeVersion?.let { " $it" } ?: "") + " on this phone."
-                SampleResult.NOT_RUN_YET -> "Not run yet. No result note was found."
-                SampleResult.STALE_OR_FOREIGN -> "The note found is from an older copy. Copy the sample again and rerun it."
+                SampleResult.VERIFIED -> "Passed: the sample ran in ${rm.runtime.name}" + (sample.runtimeVersion?.let { " ($it)" } ?: "") + " on this phone."
+                SampleResult.NOT_RUN_YET -> "No result yet. If the sample window is still open, close it, then check again."
+                SampleResult.STALE_OR_FOREIGN -> "The note found is from an older run. Run the self-test again."
                 null -> null
             }
             resultText?.let { Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp).testTag("sample_result")) }
         }
     }
 
+    SectionTitle("Using Windows programs")
+    listOf(
+        "Tap a program in Library, then Run (or Install for installers). It opens full screen.",
+        "Touch the screen to move the mouse; tap to click. Swipe in from the left edge (or press Back) for the menu: keyboard, controls, exit.",
+        "When the program closes you return to PocketOS. Installed programs appear in your library automatically.",
+    ).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+
     SectionTitle("Explain a runtime error")
-    OutlinedTextField(log, { log = it }, label = { Text("Paste log text from the runtime") }, minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("log_input"))
+    OutlinedTextField(log, { log = it }, label = { Text("Paste log text (runtime menu \u2192 Logs)") }, minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("log_input"))
     val errors = remember(log) { RuntimeLogTranslator.translate(log) }
     if (log.isNotBlank() && errors.isEmpty()) Text("No known problem found in this text.", style = MaterialTheme.typography.bodySmall)
     errors.forEach { e ->

@@ -11,11 +11,16 @@ android {
     namespace = "com.chronos.pocketos"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.chronos.pocketos"
+        // "com.chron.os" has the same length as "com.winlator", so the embedded runtime's prebuilt Linux files
+        // (which contain the absolute path /data/data/<package>/files) are retargeted byte-for-byte. Do not change.
+        applicationId = "com.chron.os"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // The embedded Windows runtime starts Box64/Wine binaries from the app's private storage. Android only
+        // allows that for apps targeting API 28 or lower (same as Winlator). PocketOS is distributed as an APK.
+        targetSdk = 28
+        versionCode = 2
+        versionName = "0.2.0"
+        ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -34,12 +39,24 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true; buildConfig = true }
-    testOptions { unitTests { isIncludeAndroidResources = true } }
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            // ./gradlew :app:testDebugUnitTest -Ppocketos.runtimeIntegration=true unpacks the real runtime (slow, ~1 GB).
+            all { it.systemProperty("pocketos.runtimeIntegration", project.findProperty("pocketos.runtimeIntegration") ?: "false") }
+        }
+    }
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+        // The runtime executes some bundled native programs (e.g. PulseAudio) from the extracted library folder.
+        jniLibs { useLegacyPackaging = true }
+    }
+    lint { disable += setOf("ExpiredTargetSdkVersion", "OldTargetApi") }
 }
 
 dependencies {
     implementation(project(":core"))
+    implementation(project(":winruntime"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.documentfile)
@@ -52,6 +69,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    // JVM build of zstd for the runtime integration test (the runtime module ships the Android build).
+    testImplementation("com.github.luben:zstd-jni:1.5.2-3")
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)

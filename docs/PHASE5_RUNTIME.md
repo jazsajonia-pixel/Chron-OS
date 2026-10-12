@@ -1,3 +1,5 @@
+> **Superseded in 0.2.0** by [PHASE6_EMBEDDED_RUNTIME.md](PHASE6_EMBEDDED_RUNTIME.md): PocketOS now includes the runtime and no longer hands files to a separate Winlator app.
+
 # Phase 5 — Windows runtime feasibility and integration decision
 
 Date: 2026-10-12. Status: **integration implemented as a handoff; real execution on Android NOT verified (no ARM64 device).**

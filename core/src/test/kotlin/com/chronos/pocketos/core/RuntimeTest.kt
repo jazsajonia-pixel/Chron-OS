@@ -1,11 +1,12 @@
 package com.chronos.pocketos.core
 
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
-import com.chronos.pocketos.core.runtime.RuntimeAvailabilityRules
+import com.chronos.pocketos.core.runtime.InstalledProgramDiscovery
+import com.chronos.pocketos.core.runtime.InstalledShortcut
 import com.chronos.pocketos.core.runtime.RuntimeCatalog
 import com.chronos.pocketos.core.runtime.RuntimeLogTranslator
-import com.chronos.pocketos.core.runtime.RuntimePath
 import com.chronos.pocketos.core.runtime.RuntimePaths
+import com.chronos.pocketos.core.runtime.RuntimeState
+import com.chronos.pocketos.core.runtime.RuntimeStateRules
 import com.chronos.pocketos.core.runtime.SampleResult
 import com.chronos.pocketos.core.runtime.SampleVerification
 import org.junit.Assert.assertEquals
@@ -14,27 +15,56 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeTest {
-    private val w = RuntimeCatalog.WINLATOR
+    private val w = RuntimeCatalog.BUILTIN
 
-    @Test fun availabilityRespectsAbi() {
-        assertTrue(RuntimeAvailabilityRules.evaluate(w, listOf("x86_64"), null) is RuntimeAvailability.DeviceIncompatible)
-        assertEquals(RuntimeAvailability.NotInstalled, RuntimeAvailabilityRules.evaluate(w, listOf("arm64-v8a"), null))
-        assertEquals(RuntimeAvailability.Installed("11.2", 30), RuntimeAvailabilityRules.evaluate(w, listOf("arm64-v8a", "armeabi-v7a"), "11.2" to 30L))
+    @Test fun stateRespectsAbiAndInstallation() {
+        assertTrue(RuntimeStateRules.initial(w, listOf("x86_64"), true, true) is RuntimeState.Unsupported)
+        assertEquals(RuntimeState.NotInstalled, RuntimeStateRules.initial(w, listOf("arm64-v8a"), false, false))
+        // System files without the Windows environment still need setup.
+        assertEquals(RuntimeState.NotInstalled, RuntimeStateRules.initial(w, listOf("arm64-v8a"), true, false))
+        assertEquals(RuntimeState.Ready, RuntimeStateRules.initial(w, listOf("arm64-v8a", "armeabi-v7a"), true, true))
     }
 
-    @Test fun downloadFolderMapsToDDrive() {
-        assertEquals(
-            RuntimePath.Mapped("D:\\PocketOS\\PocketOS Sample\\pocketos-sample.exe"),
-            RuntimePaths.locate(w, "primary:Download/PocketOS", "PocketOS Sample/pocketos-sample.exe"),
+    @Test fun programsFolderMapsToDDrive() {
+        assertEquals("D:\\PocketOS Sample\\pocketos-sample.exe", RuntimePaths.windowsPath(w.programsDrive, "PocketOS Sample/pocketos-sample.exe"))
+        assertEquals("D:\\Apps\\Notes\\setup.exe", RuntimePaths.windowsPath('D', "/Apps/Notes/setup.exe"))
+        assertEquals('E', w.homeDrive)
+    }
+
+    @Test fun installedProgramDiscoveryIgnoresKnownShortcutsAndNoise() {
+        val before = setOf("/c/Desktop/Old.desktop")
+        val after = listOf(
+            InstalledShortcut("Old", "/c/Desktop/Old.desktop"),
+            InstalledShortcut("Sample Notes", "/c/Start Menu/Programs/Sample Notes/Sample Notes.lnk"),
+            InstalledShortcut("Sample Notes", "/c/Desktop/Sample Notes.desktop", "/icons/notes.png"),
+            InstalledShortcut("Uninstall Sample Notes", "/c/Start Menu/Programs/Sample Notes/Uninstall Sample Notes.lnk"),
+            InstalledShortcut("Sample Notes Help", "/c/Start Menu/Programs/Sample Notes/Sample Notes Help.lnk"),
+            InstalledShortcut("Visit our Website", "/c/Start Menu/Programs/Sample Notes/Visit our Website.lnk"),
+            InstalledShortcut("Paint Tool", "/c/Desktop/Paint Tool.desktop"),
         )
-        assertEquals(RuntimePath.Mapped("D:\\Tools\\a.exe"), RuntimePaths.locate(w, "primary:Download", "Tools/a.exe"))
-        assertEquals(
-            RuntimePath.NeedsDrive("/storage/emulated/0/Documents/Apps/a.exe"),
-            RuntimePaths.locate(w, "primary:Documents/Apps", "a.exe"),
+        val found = InstalledProgramDiscovery.newPrograms(before, after)
+        assertEquals(listOf("Paint Tool", "Sample Notes"), found.map { it.name })
+        // The .desktop entry (with icon) wins over the raw .lnk.
+        assertEquals("/icons/notes.png", found.single { it.name == "Sample Notes" }.iconPath)
+    }
+
+    @Test fun installersWithoutShortcutsFallBackToNewProgramFiles() {
+        val pf = "/c/.wine/drive_c/Program Files"
+        val before = setOf("$pf/Old/old.exe")
+        val after = listOf(
+            InstalledShortcut("old", "$pf/Old/old.exe"),
+            InstalledShortcut("hello_console_x64", "$pf/Sample Notes/hello_console_x64.exe"),
+            InstalledShortcut("uninstall", "$pf/Sample Notes/uninstall.exe"),
+            InstalledShortcut("unins000", "$pf/Game/unins000.exe"),
+            InstalledShortcut("vc_redist.x64", "$pf/Game/redist/vc_redist.x64.exe"),
         )
-        assertEquals(RuntimePath.NeedsDrive("/storage/1234-ABCD/Download/a.exe"), RuntimePaths.locate(w, "1234-ABCD:Download", "a.exe"))
-        // "Downloads2" must not be treated as the Download folder.
-        assertTrue(RuntimePaths.locate(w, "primary:Downloads2", "a.exe") is RuntimePath.NeedsDrive)
+        assertEquals(listOf("hello_console_x64"), InstalledProgramDiscovery.newPrograms(before, after).map { it.name })
+        // As soon as an installer made a shortcut, plain files are not offered.
+        val withShortcut = after + InstalledShortcut("Sample Notes", "/c/Desktop/Sample Notes.desktop")
+        assertEquals(listOf("Sample Notes"), InstalledProgramDiscovery.newPrograms(before, withShortcut).map { it.name })
+        // Large installs are capped.
+        val many = (1..9).map { InstalledShortcut("tool$it", "$pf/Suite/tool$it.exe") }
+        assertEquals(InstalledProgramDiscovery.MAX_EXECUTABLES, InstalledProgramDiscovery.newPrograms(emptySet(), many).size)
     }
 
     @Test fun sampleVerificationNeedsExactNonce() {

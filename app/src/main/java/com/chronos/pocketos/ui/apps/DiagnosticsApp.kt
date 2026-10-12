@@ -66,13 +66,14 @@ fun DiagnosticsApp() {
         SectionTitle("Storage")
         KeyValue("PocketOS Home", formatBytes(usage.homeBytes))
         KeyValue("Temporary files", formatBytes(usage.tempImportBytes + usage.reportBytes))
-        KeyValue("Shared folder (copied programs)", usage.sharedFolderBytes?.let(::formatBytes) ?: "No folder chosen")
+        KeyValue("Imported programs", formatBytes(usage.programsBytes))
+        KeyValue("Windows runtime (incl. installed programs)", if (usage.runtimeBytes > 0) formatBytes(usage.runtimeBytes) else "Not set up")
         if (usage.orphanFolders.isNotEmpty()) KeyValue("Leftover program folders", usage.orphanFolders.joinToString())
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { val f = storage.clearTemporary(); app.shell.showMessage("Freed ${formatBytes(f)}"); refresh++ }, modifier = Modifier.testTag("diag_clear_temp")) { Text("Clear temporary files") }
             if (usage.orphanFolders.isNotEmpty()) OutlinedButton(onClick = { val n = storage.deleteOrphans(); app.shell.showMessage("Removed $n leftover folders"); refresh++ }, modifier = Modifier.testTag("diag_orphans")) { Text("Remove leftover folders") }
         }
-        Text("Programs installed inside the runtime use the runtime's own storage; manage them there.", style = MaterialTheme.typography.bodySmall)
+        Text("To free the space of an installed program, run its uninstaller from the Windows desktop (PC Apps \u2192 Runtime).", style = MaterialTheme.typography.bodySmall)
 
         SectionTitle("Compatibility report")
         Text("Creates a text report about one attempt: device, runtime, program details and recognised errors. Personal details such as names in paths, e-mail addresses and keys are removed. You preview it before sharing.", style = MaterialTheme.typography.bodySmall)

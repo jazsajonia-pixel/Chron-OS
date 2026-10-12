@@ -1,11 +1,5 @@
 package com.chronos.pocketos
 
-import android.content.ComponentName
-import android.content.Intent
-import android.content.pm.ActivityInfo
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
-import android.content.pm.ResolveInfo
 import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -18,18 +12,14 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
+import com.chronos.pocketos.core.runtime.RuntimeState
 import com.chronos.pocketos.core.runtime.SampleResult
-import com.chronos.pocketos.core.runtime.SampleVerification
-import com.chronos.pocketos.runtime.FileStagingStore
 import com.chronos.pocketos.runtime.RuntimeManager
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
@@ -40,126 +30,127 @@ import java.io.File
 @Config(qualifiers = "w1280dp-h800dp-land-mdpi")
 class RuntimeUiTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
-    @get:Rule val tmp = TemporaryFolder()
-    private val app get() = ApplicationProvider.getApplicationContext<PocketOsApp>()
+    private val app get() = ApplicationProvider.getApplicationContext<TestPocketOsApp>()
+    private val fake get() = app.fakeRuntime
 
     private fun setAbis(vararg abis: String) {
         ReflectionHelpers.setStaticField(Build::class.java, "SUPPORTED_ABIS", arrayOf(*abis))
         rule.runOnIdle { app.capabilities.recheck("test"); app.runtime.refresh() }
     }
 
-    private fun installWinlator(version: String = "11.2") {
-        val spm = shadowOf(app.packageManager)
-        spm.installPackage(PackageInfo().apply {
-            packageName = "com.winlator"; versionName = version
-            applicationInfo = ApplicationInfo().apply { packageName = "com.winlator" }
-        })
-        val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("com.winlator")
-        spm.addResolveInfoForIntent(main, ResolveInfo().apply {
-            activityInfo = ActivityInfo().apply { packageName = "com.winlator"; name = "com.winlator.MainActivity"; applicationInfo = ApplicationInfo().apply { packageName = "com.winlator" } }
-        })
-        val info = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_INFO).setPackage("com.winlator")
-        spm.addResolveInfoForIntent(info, emptyList())
-        rule.runOnIdle { app.runtime.refresh() }
+    private fun ready() {
+        fake.makeReady(); setAbis("arm64-v8a")
+        assertEquals(RuntimeState.Ready, app.runtime.state.value)
     }
 
-    private fun openPcApps() {
+    private fun openRuntimeTab() {
         rule.runOnIdle { app.shell.openApp("winapps") }
         rule.onNodeWithTag("tab_runtime").performClick()
         rule.waitForIdle()
     }
 
-    private fun useTempWorkspace(docId: String = "primary:Download/PocketOS"): File {
-        val dir = tmp.newFolder("PocketOS")
-        rule.runOnIdle { app.runtime.useStore(FileStagingStore(dir, docId)) }
-        return dir
-    }
-
-    @Test fun notInstalledOffersDownloadPage() {
-        setAbis("arm64-v8a", "armeabi-v7a")
-        openPcApps()
-        assertEquals(RuntimeAvailability.NotInstalled, app.runtime.availability.value)
-        rule.onNodeWithTag("runtime_status").assertTextContains("not installed", substring = true)
-        rule.onNodeWithTag("runtime_get").performClick()
-        val started = shadowOf(app).nextStartedActivity
-        assertEquals(Intent.ACTION_VIEW, started.action)
-        assertEquals("https://github.com/brunodev85/winlator/releases", started.dataString)
+    private fun awaitRuntime(pred: (RuntimeState) -> Boolean) {
+        val end = System.currentTimeMillis() + 15_000
+        while (!pred(app.runtime.state.value)) {
+            check(System.currentTimeMillis() < end) { "Timed out; state=${app.runtime.state.value}" }
+            Thread.sleep(20); org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        }
+        rule.waitForIdle()
     }
 
     @Test fun nonArmDeviceIsExplainedHonestly() {
         setAbis("x86_64")
-        openPcApps()
-        assertTrue(app.runtime.availability.value is RuntimeAvailability.DeviceIncompatible)
+        openRuntimeTab()
+        assertTrue(app.runtime.state.value is RuntimeState.Unsupported)
         rule.onNodeWithTag("runtime_status").assertTextContains("64-bit ARM", substring = true)
-        assertEquals(0, rule.onAllNodesWithTag("runtime_get").fetchSemanticsNodes().size)
+        assertEquals(0, rule.onAllNodesWithTag("runtime_install").fetchSemanticsNodes().size)
     }
 
-    @Test fun installedRuntimeIsDetectedAndOpened() {
+    @Test fun oneTapSetupUnpacksSystemFilesAndCreatesEnvironment() {
+        setAbis("arm64-v8a", "armeabi-v7a")
+        openRuntimeTab()
+        assertEquals(RuntimeState.NotInstalled, app.runtime.state.value)
+        rule.onNodeWithTag("runtime_status").assertTextContains("Not set up", substring = true)
+        rule.onNodeWithTag("runtime_install").performClick()
+        awaitRuntime { it == RuntimeState.Ready }
+        assertTrue(fake.installed)
+        // Drive D: is PocketOS's programs folder, drive E: the PocketOS Home folder.
+        assertEquals(app.runtime.programsDir.path, fake.drives['D'])
+        assertEquals(File(app.filesDir, "home").path, fake.drives['E'])
+        rule.onNodeWithTag("runtime_status").assertTextContains("Ready")
+        rule.onNodeWithTag("runtime_desktop").assertIsDisplayed()
+    }
+
+    @Test fun failedSetupIsReportedAndCanBeRetried() {
         setAbis("arm64-v8a")
-        installWinlator()
-        openPcApps()
-        assertEquals(RuntimeAvailability.Installed("11.2", 0), app.runtime.availability.value)
-        rule.onNodeWithTag("runtime_status").assertTextContains("11.2", substring = true)
-        rule.onNodeWithTag("runtime_open").performClick()
-        val started = shadowOf(app).nextStartedActivity
-        assertEquals("com.winlator", started.component?.packageName ?: started.`package`)
+        fake.installSucceeds = false
+        openRuntimeTab()
+        rule.onNodeWithTag("runtime_install").performClick()
+        awaitRuntime { it is RuntimeState.Failed }
+        rule.onNodeWithTag("runtime_status").assertTextContains("Setup failed", substring = true)
+        fake.installSucceeds = true
+        rule.onNodeWithTag("runtime_install").performClick()
+        awaitRuntime { it == RuntimeState.Ready }
     }
 
-    @Test fun sampleNeedsFolderFirst() {
-        openPcApps()
-        rule.onNodeWithTag("sample_stage").performScrollTo().assertIsNotEnabled()
+    @Test fun selfTestNeedsRuntimeFirst() {
+        setAbis("arm64-v8a")
+        openRuntimeTab()
+        rule.onNodeWithTag("sample_run").performScrollTo().assertIsNotEnabled()
     }
 
-    @Test fun stagingCopiesSampleAndNonceButRunsNothing() {
-        setAbis("arm64-v8a"); installWinlator()
-        val dir = useTempWorkspace()
-        openPcApps()
-        rule.onNodeWithTag("sample_stage").performScrollTo().performClick()
+    @Test fun selfTestRunsTheSampleInsidePocketOsAndVerifiesTheMarker() {
+        ready(); openRuntimeTab()
+        rule.onNodeWithTag("sample_run").performScrollTo().performClick()
         rule.waitForIdle()
-        assertNull("staging must not start any activity", shadowOf(app).nextStartedActivity)
-        val exe = File(dir, "PocketOS Sample/pocketos-sample.exe")
+        val started = shadowOf(app).nextStartedActivity
+        assertEquals("com.winlator.XServerDisplayActivity", started.component?.className)
+        assertEquals(app.packageName, started.component?.packageName)
+        assertTrue(started.getBooleanExtra("pocketos_hosted", false))
+        val exe = File(started.getStringExtra("exec_path")!!)
+        assertEquals(File(app.runtime.programsDir, "PocketOS Sample/pocketos-sample.exe"), exe)
         val bundled = app.assets.open("sample/pocketos-sample.exe").use { it.readBytes() }
         assertArrayEquals(bundled, exe.readBytes())
-        assertEquals('M'.code.toByte(), exe.readBytes()[0]); assertEquals('Z'.code.toByte(), exe.readBytes()[1])
-        val nonce = File(dir, "PocketOS Sample/pocketos_nonce.txt").readText().trim()
+        val nonce = File(exe.parentFile, "pocketos_nonce.txt").readText().trim()
         assertEquals(16, nonce.length)
-        rule.onNodeWithTag("sample_path").assertTextContains("D:\\PocketOS\\PocketOS Sample\\pocketos-sample.exe", substring = true)
 
-        rule.onNodeWithTag("sample_check").performClick()
-        rule.onNodeWithTag("sample_result").assertTextContains("Not run yet", substring = true)
-
-        // Simulate the runtime executing the sample: write exactly what the real program wrote under Wine 10 on the host
-        // (see tools/pe-fixtures/README.md). This tests PocketOS's verification, not the runtime.
-        File(dir, "PocketOS Sample/pocketos_sample_ok.txt").writeText("POCKETOS_FIXTURE_OK $nonce\r\n")
-        rule.onNodeWithTag("sample_check").performClick()
-        rule.onNodeWithTag("sample_result").assertTextContains("Verified", substring = true)
+        // Simulate the runtime: write exactly what the real sample wrote under Wine 10 (tools/pe-fixtures/README.md),
+        // then the session result the runtime process writes on exit.
+        File(exe.parentFile, "pocketos_sample_ok.txt").writeText("POCKETOS_FIXTURE_OK $nonce\r\n")
+        fake.finishSession(0)
+        val msg = rule.runOnIdle { app.imports.onReturnFromRuntime() }
+        assertTrue(msg!!.contains("Self-test passed"))
         assertEquals(SampleResult.VERIFIED, app.runtime.sample.value.result)
+        rule.onNodeWithTag("sample_result").performScrollTo().assertTextContains("Passed", substring = true)
         // Persisted across restarts.
-        val again = RuntimeManager(app) { listOf("arm64-v8a") }
+        val again = RuntimeManager(app, fake, kotlinx.coroutines.MainScope(), { listOf("arm64-v8a") }, File(app.filesDir, "home"))
         assertEquals(SampleResult.VERIFIED, again.sample.value.result)
 
-        // Re-staging invalidates the old result and the old marker.
-        rule.onNodeWithTag("sample_stage").performClick()
+        // Running again invalidates the old marker.
+        rule.onNodeWithTag("sample_run").performScrollTo().performClick()
         rule.waitForIdle()
-        assertTrue(!File(dir, "PocketOS Sample/pocketos_sample_ok.txt").exists())
+        assertTrue(!File(exe.parentFile, "pocketos_sample_ok.txt").exists())
         assertEquals(SampleResult.NOT_RUN_YET, app.runtime.checkSample())
     }
 
     @Test fun staleMarkerIsNotAcceptedAsProof() {
-        val dir = useTempWorkspace()
         rule.runOnIdle { app.runtime.stageSample() }
-        File(dir, "PocketOS Sample/pocketos_sample_ok.txt").writeText("POCKETOS_FIXTURE_OK 0123456789abcdef\r\n")
+        File(app.runtime.programsDir, "PocketOS Sample/pocketos_sample_ok.txt").writeText("POCKETOS_FIXTURE_OK 0123456789abcdef\r\n")
         assertEquals(SampleResult.STALE_OR_FOREIGN, app.runtime.checkSample())
     }
 
-    @Test fun folderOutsideDownloadExplainsDriveSetup() {
-        useTempWorkspace("primary:Documents/Apps")
-        val p = rule.runOnIdle { app.runtime.stageSample() }
-        assertTrue(p.toString().contains("/storage/emulated/0/Documents/Apps/${SampleVerification.SAMPLE_FOLDER}"))
+    @Test fun windowsDesktopAndAdvancedSettingsOpenInsidePocketOs() {
+        ready(); openRuntimeTab()
+        rule.onNodeWithTag("runtime_desktop").performClick()
+        val desktop = shadowOf(app).nextStartedActivity
+        assertEquals("com.winlator.XServerDisplayActivity", desktop.component?.className)
+        assertTrue(!desktop.hasExtra("exec_path"))
+        rule.onNodeWithTag("runtime_advanced").performClick()
+        assertEquals("com.winlator.MainActivity", shadowOf(app).nextStartedActivity.component?.className)
     }
 
     @Test fun logExplainerTranslatesRealWineOutput() {
-        openPcApps()
+        openRuntimeTab()
         val log = "012c:err:module:import_dll Library pocketos_missing.dll (which is needed by L\"Z:\\\\tmp\\\\wtest\\\\needs_missing_dll.exe\") not found"
         rule.onNodeWithTag("log_input").performScrollTo().performTextInput(log)
         rule.onNodeWithTag("log_error").performScrollTo().assertIsDisplayed().assertTextContains("pocketos_missing.dll", substring = true)

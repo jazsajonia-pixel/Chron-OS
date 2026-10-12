@@ -7,14 +7,16 @@ import com.chronos.pocketos.BuildConfig
 import com.chronos.pocketos.PocketOsApp
 import com.chronos.pocketos.core.diagnostics.CompatibilityReport
 import com.chronos.pocketos.core.library.safeFolderName
-import com.chronos.pocketos.core.runtime.RuntimeAvailability
 import java.io.File
 
 data class StorageUsage(
     val homeBytes: Long,
     val tempImportBytes: Long,
     val reportBytes: Long,
-    val sharedFolderBytes: Long?,
+    /** Copies of imported programs (drive D: of the runtime). */
+    val programsBytes: Long,
+    /** Runtime system files and the Windows environment, including installed programs. */
+    val runtimeBytes: Long,
     val orphanFolders: List<String>,
 )
 
@@ -26,14 +28,15 @@ class StorageManager(private val app: PocketOsApp) {
     private fun File.bytes(): Long = if (!exists()) 0 else walkBottomUp().filter { it.isFile }.sumOf { it.length() }
 
     fun usage(): StorageUsage {
-        val store = app.runtime.store.value
+        val store = app.runtime.programs
         val referenced = app.library.state.value.entries.mapNotNull { it.stagedPath?.substringBeforeLast('/')?.substringAfter("Apps/") }.toSet()
-        val orphans = store?.let { s -> runCatching { s.list("Apps").filter { it !in referenced } }.getOrDefault(emptyList()) }.orEmpty()
+        val orphans = runCatching { store.list("Apps").filter { it !in referenced } }.getOrDefault(emptyList())
         return StorageUsage(
             homeBytes = File(app.filesDir, "home").bytes(),
             tempImportBytes = if (app.imports.state.value is com.chronos.pocketos.library.ImportState.Idle) importsDir.bytes() else 0,
             reportBytes = reportsDir.bytes(),
-            sharedFolderBytes = store?.let { runCatching { it.sizeOf("Apps") + it.sizeOf(com.chronos.pocketos.core.runtime.SampleVerification.SAMPLE_FOLDER) }.getOrNull() },
+            programsBytes = runCatching { store.sizeOf("Apps") + store.sizeOf(com.chronos.pocketos.core.runtime.SampleVerification.SAMPLE_FOLDER) }.getOrDefault(0L),
+            runtimeBytes = runCatching { app.runtime.installedSize() }.getOrDefault(0L),
             orphanFolders = orphans,
         )
     }
@@ -49,7 +52,7 @@ class StorageManager(private val app: PocketOsApp) {
 
     /** Deletes copied program folders that no library entry refers to. */
     fun deleteOrphans(): Int {
-        val store = app.runtime.store.value ?: return 0
+        val store = app.runtime.programs
         val names = usage().orphanFolders
         val n = names.count { runCatching { store.delete("Apps/$it") }.getOrDefault(false) }
         app.diagnostics.add("storage", "Removed $n leftover program folders")
@@ -63,7 +66,7 @@ class StorageManager(private val app: PocketOsApp) {
             caps = app.capabilities.capabilities.value,
             profile = app.capabilities.decision.value,
             runtimeName = rm.runtime.name,
-            runtimeVersion = (rm.availability.value as? RuntimeAvailability.Installed)?.versionName,
+            runtimeVersion = rm.runtime.engine + " (" + rm.state.value.javaClass.simpleName + ")",
             entry = entryId?.let(app.library::get),
             runtimeLog = runtimeLog,
         )
