@@ -27,6 +27,8 @@ data class ShellSettings(
     val showSmartCursor: Boolean = true,
     val touchpadVisibility: TouchpadVisibility = TouchpadVisibility.AUTO,
     val shortcutsEnabled: Boolean = true,
+    val disabledShortcuts: Set<String> = emptySet(),
+    val touchpadClickButtons: Boolean = true,
     // Display & performance
     val profileChoice: ProfileChoice = ProfileChoice.AUTO,
     /** null = automatic UI scale. */

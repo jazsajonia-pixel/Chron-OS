@@ -26,11 +26,6 @@ import com.chronos.pocketos.ui.components.ConfirmDialog
 import com.chronos.pocketos.ui.components.SectionTitle
 import com.chronos.pocketos.ui.components.SwitchRow
 
-/** Extra settings sections contributed by other modules (input, display, performance, privacy). */
-object SettingsSections {
-    val sections = mutableListOf<Pair<String, @Composable () -> Unit>>()
-}
-
 @Composable
 fun SettingsApp() {
     val app = LocalPocketOs.current
@@ -48,10 +43,7 @@ fun SettingsApp() {
         SwitchRow("24-hour clock", null, s.use24HourClock, tag = "toggle_24h") { v -> app.settings.update { it.copy(use24HourClock = v) } }
         SwitchRow("Reduce motion and shadows", "Fewer visual effects; saves a little battery", s.reduceMotion) { v -> app.settings.update { it.copy(reduceMotion = v) } }
 
-        SettingsSections.sections.forEach { (title, content) ->
-            SectionTitle(title)
-            content()
-        }
+        InputSettingsSection()
 
         SectionTitle("About")
         Text("PocketOS ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyLarge)

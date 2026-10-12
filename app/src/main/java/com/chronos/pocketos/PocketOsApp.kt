@@ -6,6 +6,11 @@ import com.chronos.pocketos.core.files.SandboxFileSystem
 import com.chronos.pocketos.data.SettingsRepository
 import com.chronos.pocketos.shell.ShellController
 import java.io.File
+import com.chronos.pocketos.input.KeyShortcutHandler
+import com.chronos.pocketos.input.PhysicalInputMonitor
+import com.chronos.pocketos.input.SmartCursor
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 
 /** Lightweight service locator; avoids a DI framework dependency. */
 class PocketOsApp : Application() {
@@ -15,6 +20,12 @@ class PocketOsApp : Application() {
         private set
     lateinit var home: SandboxFileSystem
         private set
+    val cursor = SmartCursor()
+    lateinit var input: PhysicalInputMonitor
+        private set
+    lateinit var keys: KeyShortcutHandler
+        private set
+    val appScope = MainScope()
 
     /** Per-window transient state (e.g. unsaved editor text) that must survive moving between displays. */
     val windowState = mutableMapOf<Int, Any>()
@@ -24,6 +35,9 @@ class PocketOsApp : Application() {
         settings = SettingsRepository(this)
         shell = ShellController(ShellController.decodeSession(settings.loadSession()))
         home = SandboxFileSystem(File(filesDir, "home"))
+        input = PhysicalInputMonitor(this)
+        keys = KeyShortcutHandler(shell, { settings.settings.value }, cursor)
+        appScope.launch { settings.settings.collect { cursor.configure(it) } }
         seedHome()
     }
 

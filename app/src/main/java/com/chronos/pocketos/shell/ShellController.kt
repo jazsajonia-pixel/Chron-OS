@@ -16,6 +16,7 @@ data class ShellUi(
     /** Desktop context menu position in desktop dp, or null when hidden. */
     val contextMenuAt: Pair<Float, Float>? = null,
     val message: String? = null,
+    val touchpadOpen: Boolean = false,
 )
 
 /**
@@ -56,6 +57,18 @@ class ShellController(initial: DesktopState = DesktopState()) {
     }
 
     fun closeFocused() { _desktop.value.focusedId?.let(::close) }
+
+    fun setTouchpadOpen(open: Boolean) = _ui.update { it.copy(touchpadOpen = open) }
+    fun showSwitcher() = _ui.update { it.copy(switcherOpen = true) }
+    fun hideSwitcher() = _ui.update { it.copy(switcherOpen = false) }
+
+    /** Escape closes transient UI (menus, launcher, switcher). Returns true if something was closed. */
+    fun handleEscape(): Boolean {
+        val ui = _ui.value
+        if (ui.contextMenuAt == null && !ui.launcherOpen && !ui.switcherOpen) return false
+        _ui.update { it.copy(contextMenuAt = null, launcherOpen = false, switcherOpen = false) }
+        return true
+    }
 
     fun toggleLauncher() = _ui.update { it.copy(launcherOpen = !it.launcherOpen, contextMenuAt = null) }
     fun closeLauncher() = _ui.update { it.copy(launcherOpen = false) }

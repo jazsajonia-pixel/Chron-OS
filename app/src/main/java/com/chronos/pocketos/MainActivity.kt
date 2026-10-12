@@ -1,6 +1,7 @@
 package com.chronos.pocketos
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
@@ -13,6 +14,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.chronos.pocketos.ui.apps.AppContent
 import com.chronos.pocketos.ui.desktop.Desktop
+import com.chronos.pocketos.ui.input.PhoneInputExtras
+import com.chronos.pocketos.ui.input.FloatingTouchpad
 import com.chronos.pocketos.ui.theme.PocketOsTheme
 
 class MainActivity : ComponentActivity() {
@@ -34,12 +37,20 @@ class MainActivity : ComponentActivity() {
                         controller = pocket.shell,
                         settings = settings,
                         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
+                        cursor = pocket.cursor,
+                        targetId = "phone",
+                        targetPriority = 0,
                         onExit = { pocket.saveSession(); finishAndRemoveTask() },
+                        statusExtras = { PhoneInputExtras() },
+                        overlay = { FloatingTouchpad() },
                     ) { w -> AppContent(w) }
                 }
             }
         }
     }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        pocket.keys.handle(event) || super.dispatchKeyEvent(event)
 
     override fun onStop() {
         super.onStop()

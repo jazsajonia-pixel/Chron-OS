@@ -44,3 +44,30 @@ Limitations
 - Not run on a physical device or emulator. Touch behaviour verified only through Robolectric input injection.
 
 Next: Phase 2 — input abstraction and Smart Cursor.
+
+## Phase 2 — Input system and Smart Cursor (2026-10-12)
+
+Implemented
+- `:core/input`: `TouchpadGestureInterpreter` (move with acceleration, tap/double-tap click, tap-and-drag, long-press drag,
+  two-finger tap = right click, two-finger scroll with natural/traditional direction), `PointerController` (clamped cursor →
+  dispatch requests), `ShortcutMap` (14 default chords avoiding Meta), `PhysicalInputSummary` (excludes virtual/built-in devices),
+  `TouchpadPolicy` (AUTO hides touchpad when a mouse is connected).
+- `:app/input`: `SmartCursor` delivers synthetic `MotionEvent`s (finger taps, drag sequences, mouse-source right click and
+  ACTION_SCROLL) **only into PocketOS's own window** registered as a `DesktopTarget`; `PhysicalInputMonitor` (InputManager listener);
+  `KeyShortcutHandler` (called from `Activity.dispatchKeyEvent`), Alt-hold window switcher, Escape closes menus.
+- UI: floating touchpad in a separate Popup window (no touch-stream collisions), optional left/right buttons (hold left = drag),
+  cursor overlay, taskbar indicators for keyboard/mouse, right-click on wallpaper, physical mouse hides Smart Cursor.
+- Settings: speed, size, tap-to-click, natural scroll, click buttons, touchpad Auto/Always/Never, device list, shortcut toggles,
+  limitations text.
+
+Bugs found by tests and fixed
+- Gestures starting with two fingers were treated as cursor movement (now scroll/right-click).
+
+Build/test (actual)
+- `./gradlew :app:assembleDebug` → SUCCESS. `:core:test` → 30/30. `:app:testDebugUnitTest` → 20/20 (11 new input tests).
+
+Limitations
+- Physical mouse/keyboard verified only with Robolectric-injected events; no real Bluetooth/USB device tested.
+- Some OEMs intercept Alt+Tab/Meta; documented fallbacks.
+
+Next: Phase 3 — external monitor desktop mode.

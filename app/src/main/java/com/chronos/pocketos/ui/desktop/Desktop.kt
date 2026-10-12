@@ -51,6 +51,15 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.runtime.DisposableEffect
+import com.chronos.pocketos.input.DesktopTarget
+import com.chronos.pocketos.input.SmartCursor
+import com.chronos.pocketos.ui.input.CursorOverlay
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -88,18 +97,43 @@ fun Desktop(
     controller: ShellController,
     settings: ShellSettings,
     modifier: Modifier = Modifier,
+    cursor: SmartCursor? = null,
+    targetId: String = "phone",
+    targetPriority: Int = 0,
     onExit: (() -> Unit)? = null,
     statusExtras: @Composable () -> Unit = {},
+    overlay: @Composable () -> Unit = {},
     appContent: @Composable (AppWindow) -> Unit,
 ) {
     val desktop by controller.desktop.collectAsState()
     val ui by controller.ui.collectAsState()
     val dark = isDark(settings.theme)
+    val view = LocalView.current
+
+    if (cursor != null) {
+        DisposableEffect(cursor, targetId, view) {
+            cursor.register(DesktopTarget(targetId, view.rootView, 0f, 0f, view.width.toFloat(), view.height.toFloat(), targetPriority))
+            onDispose { cursor.unregister(targetId) }
+        }
+    }
 
     BoxWithConstraints(
         modifier
             .fillMaxSize()
             .background(wallpaperBrush(settings.wallpaper, dark))
+            .onGloballyPositioned { c ->
+                val p = c.positionInWindow()
+                cursor?.updateBounds(targetId, p.x, p.y, c.size.width.toFloat(), c.size.height.toFloat())
+            }
+            .pointerInput(cursor) {
+                // Detect a physical mouse (system pointer) so the Smart Cursor can step aside.
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(PointerEventPass.Initial)
+                        if (cursor != null && !cursor.dispatching && e.changes.any { it.type == PointerType.Mouse }) cursor.markPhysicalMouseUsed()
+                    }
+                }
+            }
             .testTag("desktop"),
     ) {
         val areaW = maxWidth.value.toInt()
@@ -116,6 +150,19 @@ fun Desktop(
                         onTap = { controller.dismissContextMenu(); controller.closeLauncher() },
                         onLongPress = { p -> controller.showContextMenu(p.x / density, p.y / density) },
                     )
+                }
+                .pointerInput(Unit) {
+                    // Secondary (right) mouse button opens the desktop menu.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val e = awaitPointerEvent()
+                            if (e.type == PointerEventType.Press && e.buttons.isSecondaryPressed) {
+                                val p = e.changes.first().position
+                                e.changes.forEach { it.consume() }
+                                controller.showContextMenu(p.x / density, p.y / density)
+                            }
+                        }
+                    }
                 }
                 .testTag("wallpaper"),
         )
@@ -168,6 +215,15 @@ fun Desktop(
             statusExtras = statusExtras,
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+
+        overlay()
+
+        if (cursor != null && settings.showSmartCursor) {
+            val active by cursor.active.collectAsState()
+            val activeTarget by cursor.activeTargetId.collectAsState()
+            val ps by cursor.state.collectAsState()
+            if (active && activeTarget == targetId) CursorOverlay(ps.x, ps.y, settings.cursorSizeScale, ps.pressed)
+        }
 
         ui.message?.let { msg ->
             LaunchedEffect(msg) { delay(3500); controller.clearMessage() }
