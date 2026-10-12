@@ -183,3 +183,29 @@ Limitations
 - PocketOS cannot see inside the runtime's container, so installed-program state and outcomes are user-reported.
 
 Next: Phase 7 — compatibility recovery, diagnostics and quality.
+
+## Phase 7 — Compatibility recovery, diagnostics and quality (2026-10-12)
+
+Implemented
+- Per-app known-good settings and bounded (3-step, visible) fallback were delivered in Phase 6 and are reused here.
+- `:core/diagnostics`: `LogSanitizer` (e-mail, tokens/keys, long secrets, user names in Windows/Linux paths, shared-storage
+  roots, app-private dirs, SAF document URIs reduced to the file name), bounded `EventLog` with encode/decode,
+  `CrashLoopGuard`, `CompatibilityReport` (device, profile, runtime version, app details, recognised errors, sanitized log tail).
+- `:app/diag/DiagnosticsCenter`: persisted sanitized event log (display, input, profile, runtime, memory, storage, crash);
+  crash handler storing exception type + top frames only (no messages); safe start (skip session restore) after 2 early
+  crashes. `StorageManager`: usage, clear temporary files, remove leftover program folders not referenced by the library
+  (never touches other files), report preview → Share (ACTION_SEND chooser via FileProvider, user action only) or Save to Home.
+- New Diagnostics app (launcher) with Health, Storage, Compatibility report and Event log sections.
+
+Bugs found by tests and fixed
+- Sanitizer leaked folder names inside percent-encoded SAF document ids → URIs now decoded and reduced to file name.
+
+Build/test (actual)
+- `:app:assembleDebug` SUCCESS. `:core:test` 68/68 (+4 diagnostics). `:app:testDebugUnitTest` 60/60 (+7 quality:
+  sanitized log UI, report preview/share/save, storage cleanup scope, crash records + safe start, activity recreation,
+  portrait reconfiguration refit, low-memory handling). Display disconnect is covered by Phase 3 tests.
+
+Limitations
+- Crash handling verified in JVM tests by calling `recordCrash` directly; a real process crash/restart was not exercised on a device.
+
+Next: Phase 8 — polish, onboarding, documentation and release build.

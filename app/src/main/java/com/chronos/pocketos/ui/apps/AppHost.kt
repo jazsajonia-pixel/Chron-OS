@@ -14,6 +14,7 @@ fun AppContent(window: AppWindow) {
         AppIds.SETTINGS -> SettingsApp()
         AppIds.SYSINFO -> SystemInfoApp()
         AppIds.WINDOWS_APPS -> PcAppsApp(window)
+        AppIds.DIAGNOSTICS -> DiagnosticsApp()
         else -> UnknownApp(window)
     }
 }

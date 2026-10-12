@@ -32,6 +32,7 @@ object BuiltInApps {
         AppSpec(AppIds.CALCULATOR, "Calculator", "±", Color(0xFFF59E0B), "Everyday arithmetic", 320, 460),
         AppSpec(AppIds.WINDOWS_APPS, "PC Apps", "▣", Color(0xFF0EA5E9), "Install supported Windows programs (.exe) through a compatibility runtime", 720, 540),
         AppSpec(AppIds.SYSINFO, "System Info", "ⓘ", Color(0xFF8B5CF6), "Device capabilities and profile", 560, 520),
+        AppSpec(AppIds.DIAGNOSTICS, "Diagnostics", "✚", Color(0xFFEF4444), "Event log, storage cleanup and compatibility reports", 640, 540),
         AppSpec(AppIds.SETTINGS, "Settings", "⚙", Color(0xFF64748B), "Appearance, input, display, privacy", 640, 520),
     )
 

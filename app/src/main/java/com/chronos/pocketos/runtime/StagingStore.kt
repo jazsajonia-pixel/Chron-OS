@@ -19,6 +19,8 @@ interface StagingStore {
     fun delete(relative: String): Boolean
     /** Total bytes used under [relative] (a folder or file). */
     fun sizeOf(relative: String): Long
+    /** Names directly inside folder [relative] (empty if missing). */
+    fun list(relative: String): List<String>
 }
 
 /** Storage Access Framework implementation; works without storage permissions on every supported Android version. */
@@ -56,6 +58,8 @@ class SafStagingStore(private val context: Context, val treeUri: Uri) : StagingS
         fun walk(d: DocumentFile): Long = if (d.isDirectory) d.listFiles().sumOf(::walk) else d.length()
         return find(relative)?.let(::walk) ?: 0L
     }
+    override fun list(relative: String): List<String> =
+        (if (relative.isEmpty()) root else find(relative))?.takeIf { it.isDirectory }?.listFiles()?.mapNotNull { it.name }.orEmpty()
 }
 
 /** Plain-file implementation, used by tests and for the app-private fallback. */
@@ -73,6 +77,7 @@ class FileStagingStore(private val root: File, override val documentId: String, 
     override fun exists(relative: String) = f(relative).exists()
     override fun delete(relative: String) = f(relative).deleteRecursively()
     override fun sizeOf(relative: String) = f(relative).walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+    override fun list(relative: String): List<String> = f(relative).list()?.toList().orEmpty()
 }
 
 internal fun InputStream.readNBytesCompat(max: Int): ByteArray {

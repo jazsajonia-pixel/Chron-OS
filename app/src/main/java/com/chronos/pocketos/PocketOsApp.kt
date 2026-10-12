@@ -32,6 +32,8 @@ class PocketOsApp : Application() {
         private set
     lateinit var runtime: com.chronos.pocketos.runtime.RuntimeManager
         private set
+    lateinit var diagnostics: com.chronos.pocketos.diag.DiagnosticsCenter
+        private set
     lateinit var library: com.chronos.pocketos.library.LibraryRepository
         private set
     lateinit var imports: com.chronos.pocketos.library.ImportManager
@@ -46,7 +48,10 @@ class PocketOsApp : Application() {
     override fun onCreate() {
         super.onCreate()
         settings = SettingsRepository(this)
-        shell = ShellController(ShellController.decodeSession(settings.loadSession()))
+        diagnostics = com.chronos.pocketos.diag.DiagnosticsCenter(this)
+        diagnostics.installCrashHandler()
+        // Crash-loop protection: after repeated early crashes, start with an empty desktop instead of the saved session.
+        shell = ShellController(if (diagnostics.safeMode) com.chronos.pocketos.core.window.DesktopState() else ShellController.decodeSession(settings.loadSession()))
         home = SandboxFileSystem(File(filesDir, "home"))
         input = PhysicalInputMonitor(this)
         keys = KeyShortcutHandler(shell, { settings.settings.value }, cursor)
@@ -63,7 +68,7 @@ class PocketOsApp : Application() {
             com.chronos.pocketos.core.library.RuntimeProfile.safeDefault(capabilities.decision.value.profile)
         })
         imports.cleanupTemp() // crash recovery: remove half-finished imports
-        appScope.launch { runtime.availability.collect { imports.refreshAll() } }
+        appScope.launch { runtime.availability.collect { imports.refreshAll(); diagnostics.add("runtime", it.toString()) } }
         appScope.launch { runtime.store.collect { imports.refreshAll() } }
         com.chronos.pocketos.ui.apps.FileOpenHooks.onWindowsExecutable = { _, uri, name ->
             imports.begin(uri, name)
@@ -74,7 +79,12 @@ class PocketOsApp : Application() {
             settings.settings.collect { if (it.profileChoice != lastChoice) { lastChoice = it.profileChoice; capabilities.recheck("Profile changed") } }
         }
         appScope.launch { displays.displays.collect { capabilities.recheck("Displays changed") } }
-        appScope.launch { capabilities.decision.collect { shell.maxRecommendedWindows = it.settings.maxRecommendedWindows } }
+        appScope.launch { capabilities.decision.collect {
+            shell.maxRecommendedWindows = it.settings.maxRecommendedWindows
+            diagnostics.add("profile", "${it.profile.label} (${capabilities.lastRecheckReason}): ${it.reasons.joinToString(" ")}")
+        } }
+        appScope.launch { displays.state.collect { s -> s.lastEvent?.let { diagnostics.add("display", it) } } }
+        appScope.launch { input.summary.collect { diagnostics.add("input", "Keyboards ${it.keyboards.size}, mice ${it.mice.size}, controllers ${it.gamepads.size}") } }
         seedHome()
     }
 
@@ -99,9 +109,13 @@ class PocketOsApp : Application() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         if (::capabilities.isInitialized) capabilities.recheck("Android asked apps to free memory")
+        if (::diagnostics.isInitialized) diagnostics.add("memory", "onTrimMemory level $level")
     }
 
-    fun saveSession() = settings.saveSession(shell.encodeSession())
+    fun saveSession() {
+        settings.saveSession(shell.encodeSession())
+        if (::diagnostics.isInitialized) diagnostics.save()
+    }
 }
 
 val LocalPocketOs = staticCompositionLocalOf<PocketOsApp> { error("PocketOsApp not provided") }
