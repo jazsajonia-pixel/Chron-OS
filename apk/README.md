@@ -3,7 +3,8 @@
 ## 0.2.0 — built-in Windows runtime (current)
 
 The 0.2.0 APKs contain the Windows runtime (Wine + Box64) and are 170–185 MB, above GitHub's 100 MB limit for files
-in a repository. Download them from the **[v0.2.0 pre-release](https://github.com/jazsajonia-pixel/Chron-OS/releases/tag/v0.2.0)**.
+in a repository. They are attached to the **v0.2.0 release** on the GitHub Releases page once it is published; you can
+also build them yourself with `./gradlew :app:assembleDebug :app:assembleRelease` (see the main README).
 
 | File | Use |
 |---|---|
