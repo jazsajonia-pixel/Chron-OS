@@ -5,7 +5,7 @@ project(GladioRenderer)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wno-unused-function -Wimplicit-function-declaration -Werror=incompatible-pointer-types")
 
 include_directories(include)
-include_directories(../winlator/include)
+include_directories(../pocketos_runtime/include)
 include_directories(../vortekrenderer/include)
 
 add_library(gladiorenderer SHARED
@@ -26,7 +26,7 @@ add_library(gladiorenderer SHARED
             src/gl_framebuffer.c)
 
 target_link_libraries(gladiorenderer
-                      winlator
+                      pocketos_runtime
                       log
                       android
                       EGL

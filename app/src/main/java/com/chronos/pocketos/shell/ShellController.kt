@@ -49,7 +49,28 @@ class ShellController(initial: DesktopState = DesktopState()) {
         }
     }
 
-    fun close(id: Int) = _desktop.update { WindowManager.close(it, id) }
+    /** Called after a window was closed (by the user or by PocketOS). */
+    var onWindowClosed: ((com.chronos.pocketos.core.window.AppWindow) -> Unit)? = null
+
+    fun close(id: Int) {
+        val window = _desktop.value.windows[id] ?: return
+        _desktop.update { WindowManager.close(it, id) }
+        onWindowClosed?.invoke(window)
+    }
+
+    /** Opens (or brings to the front) the window of the running Windows program and shows [title] on it. */
+    fun showWindowsProgram(title: String) {
+        val existing = _desktop.value.windows.values.firstOrNull { it.appId == AppIds.WINDOWS_PROGRAM }
+        if (existing == null) openApp(AppIds.WINDOWS_PROGRAM)
+        val w = _desktop.value.windows.values.firstOrNull { it.appId == AppIds.WINDOWS_PROGRAM } ?: return
+        setTitle(w.id, title)
+        focus(w.id)
+    }
+
+    /** Closes every window of [appId]. */
+    fun closeApp(appId: String) {
+        _desktop.value.windows.values.filter { it.appId == appId }.map { it.id }.forEach(::close)
+    }
     fun focus(id: Int) = _desktop.update { WindowManager.focus(it, id) }
     fun minimize(id: Int) = _desktop.update { WindowManager.minimize(it, id) }
     fun toggleMaximize(id: Int) = _desktop.update { WindowManager.toggleMaximize(it, id) }
@@ -107,7 +128,8 @@ class ShellController(initial: DesktopState = DesktopState()) {
         private val json = Json { ignoreUnknownKeys = true }
         fun decodeSession(text: String?): DesktopState = if (text.isNullOrBlank()) DesktopState() else
             runCatching { json.decodeFromString(DesktopState.serializer(), text) }.getOrDefault(DesktopState())
-                .let { s -> s.copy(windows = s.windows.filterValues { BuiltInApps.find(it.appId) != null }) }
+                // A Windows program does not survive PocketOS restarting, so its window is not restored.
+                .let { s -> s.copy(windows = s.windows.filterValues { BuiltInApps.find(it.appId) != null && it.appId != AppIds.WINDOWS_PROGRAM }) }
                 .let { s -> s.copy(zOrder = s.zOrder.filter { it in s.windows }, focusedId = s.focusedId?.takeIf { it in s.windows }) }
     }
 }

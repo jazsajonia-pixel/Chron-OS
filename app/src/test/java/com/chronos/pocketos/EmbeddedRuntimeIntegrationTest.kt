@@ -4,7 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.chronos.pocketos.core.library.GraphicsChoice
 import com.chronos.pocketos.core.library.RuntimeProfile
-import com.chronos.pocketos.runtime.EmbeddedWinlatorBackend
+import com.chronos.pocketos.runtime.EmbeddedWindowsBackend
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,8 +18,8 @@ import java.io.File
 
 /**
  * Runs PocketOS's real runtime glue against the real bundled runtime files: unpacks the Linux userland with Wine and
- * Box64, creates the Windows environment, applies settings and scans for installed programs. Only the final
- * process start (which needs an ARM64 Android phone) is not covered.
+ * Box64, creates the Windows environment, applies settings and scans for installed programs. Starting a program
+ * (which needs an ARM64 Android phone and its GPU) is not covered.
  *
  * Slow and disk-hungry, so opt-in: ./gradlew :app:testDebugUnitTest -Ppocketos.runtimeIntegration=true --tests '*EmbeddedRuntimeIntegrationTest*'
  */
@@ -29,7 +29,7 @@ class EmbeddedRuntimeIntegrationTest {
     @Test fun realRuntimeInstallsCreatesEnvironmentAndFindsInstalledPrograms() {
         assumeTrue(System.getProperty("pocketos.runtimeIntegration") == "true")
         val context = ApplicationProvider.getApplicationContext<android.app.Application>()
-        val backend = EmbeddedWinlatorBackend(context)
+        val backend = EmbeddedWindowsBackend(context)
         assertFalse(backend.systemFilesInstalled())
 
         val progress = mutableListOf<Int>()
@@ -43,6 +43,9 @@ class EmbeddedRuntimeIntegrationTest {
         // The retargeted userland points at this app's own folder.
         val ldCache = File(rootfs, "etc/ld.so.cache").takeIf { it.isFile }?.readBytes()
         if (ldCache != null) assertFalse(String(ldCache, Charsets.ISO_8859_1).contains("com.winlator"))
+        // No runtime screens: the runtime declares no activities of its own.
+        val pm = context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_ACTIVITIES)
+        assertTrue(pm.activities.orEmpty().none { it.name.startsWith("com.chronos.pocketos.windows") })
 
         val programs = File(context.filesDir, "pc-apps").apply { mkdirs() }
         val home = File(context.filesDir, "home").apply { mkdirs() }
@@ -71,10 +74,6 @@ class EmbeddedRuntimeIntegrationTest {
         assertTrue(found.any { it.name == "Sample Paint" && it.path.endsWith("Desktop/Sample Paint.desktop") })
         assertTrue(found.any { it.path.endsWith("Program Files/Sample Paint/SamplePaint.exe") })
 
-        val intent = backend.launchIntent(id, File(programs, "Apps/x/setup.exe").path, null, "s1")
-        assertEquals("com.winlator.XServerDisplayActivity", intent.component?.className)
-        assertEquals(id, intent.getIntExtra("container_id", -1))
-        assertTrue(intent.getBooleanExtra("pocketos_hosted", false))
         assertTrue(backend.installedSize() > 300L * 1024 * 1024)
     }
 }

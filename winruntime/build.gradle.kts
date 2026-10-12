@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.winlator"
+    namespace = "com.chronos.pocketos.windows"
     compileSdk = 35
     ndkVersion = "24.0.8215888"
     defaultConfig {

@@ -1,7 +1,6 @@
 package com.chronos.pocketos.runtime
 
 import android.content.Context
-import android.content.Intent
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.InstalledShortcut
 import com.chronos.pocketos.core.runtime.RuntimeCatalog
@@ -27,9 +26,9 @@ import java.util.UUID
 
 /**
  * PocketOS's built-in Windows runtime. Programs are copied into PocketOS's private programs folder (drive D: inside
- * Windows), the PocketOS Home folder is drive E:, and programs start inside PocketOS (in a separate process so a
- * crashing program cannot take the desktop down). When the program exits the runtime writes a small result file,
- * which PocketOS reads when it comes back to the front.
+ * Windows), the PocketOS Home folder is drive E:, and programs run inside a PocketOS window: the phone never switches
+ * to another screen. Wine and the program run as separate processes, so a crashing program cannot take the desktop
+ * down. One Windows program (or the Windows desktop) runs at a time.
  */
 class RuntimeManager(
     private val context: Context,
@@ -70,6 +69,30 @@ class RuntimeManager(
     )
 
     data class FinishedSession(val pending: PendingSession, val result: SessionResult?)
+
+    /** The Windows program that is running now. */
+    data class ActiveSession(
+        val sessionId: String,
+        val purpose: SessionPurpose,
+        val entryId: String?,
+        val title: String,
+        val ready: Boolean,
+        val status: String,
+        val handle: RuntimeSession,
+    )
+
+    sealed interface LaunchResult {
+        data class Started(val session: ActiveSession) : LaunchResult
+        data class Busy(val running: ActiveSession) : LaunchResult
+        data class NotReady(val message: String) : LaunchResult
+    }
+
+    private val _active = MutableStateFlow<ActiveSession?>(null)
+    val active: StateFlow<ActiveSession?> = _active.asStateFlow()
+    private var finished: FinishedSession? = null
+
+    /** Called on the main thread when a session ends (after its result can be read with [consumeFinishedSession]). */
+    var onSessionEnded: ((ActiveSession) -> Unit)? = null
 
     init {
         val verifiedAt = prefs.getLong(KEY_VERIFIED_AT, 0L).takeIf { it > 0 }
@@ -124,47 +147,83 @@ class RuntimeManager(
     fun windowsPathFor(relative: String): String = RuntimePaths.windowsPath(runtime.programsDrive, relative)
 
     /**
-     * Prepares a start: applies [profile], records the session and returns the intent that opens the program.
-     * Returns null if the runtime is not ready.
+     * Starts a program inside PocketOS: applies [profile], records the session and starts it. The program appears in
+     * the PocketOS window that shows [active]. Call on the main thread.
      */
-    fun prepareLaunch(
+    fun launch(
         purpose: SessionPurpose,
         entryId: String?,
         relativePath: String?,
         shortcutPath: String?,
         profile: RuntimeProfile,
-    ): Intent? {
-        if (!isReady) return null
-        val id = backend.containerId() ?: return null
+        title: String,
+        execPath: String? = null,
+    ): LaunchResult {
+        _active.value?.let { return LaunchResult.Busy(it) }
+        if (!isReady) return LaunchResult.NotReady("Set up the Windows runtime first (PC Apps \u2192 Runtime).")
+        val id = backend.containerId() ?: return LaunchResult.NotReady("The Windows environment is missing. Repair the runtime in PC Apps \u2192 Runtime.")
         backend.ensureDrives(id, drives())
         backend.applyProfile(id, profile)
         val sessionId = UUID.randomUUID().toString()
         val before = if (purpose == SessionPurpose.INSTALL) backend.shortcuts(id).map { it.path }.toSet() else emptySet()
-        savePending(PendingSession(sessionId, purpose, entryId, System.currentTimeMillis(), before))
-        backend.sessionResultFile().delete()
-        val unix = relativePath?.let { File(programsDir, it).path }
-        return backend.launchIntent(id, unix, shortcutPath, sessionId)
+        val pending = PendingSession(sessionId, purpose, entryId, System.currentTimeMillis(), before)
+        savePending(pending)
+        finished = null
+        val unix = execPath ?: relativePath?.let { File(programsDir, it).path }
+        var published = false
+        var endedEarly: Array<Int?>? = null
+        val handle = backend.startSession(id, unix, shortcutPath, object : SessionEvents {
+            override fun onStatus(message: String) {
+                _active.value?.takeIf { it.sessionId == sessionId }?.let { _active.value = it.copy(status = message) }
+            }
+            override fun onReady() {
+                _active.value?.takeIf { it.sessionId == sessionId }?.let { _active.value = it.copy(ready = true, status = "") }
+            }
+            override fun onEnded(exitStatus: Int?) {
+                if (published) sessionEnded(pending, exitStatus) else endedEarly = arrayOf(exitStatus)
+            }
+        })
+        val session = ActiveSession(sessionId, purpose, entryId, title, ready = false, status = "Starting\u2026", handle = handle)
+        _active.value = session
+        published = true
+        endedEarly?.let { sessionEnded(pending, it[0]) }
+        return LaunchResult.Started(session)
     }
 
-    /** Opens the plain Windows desktop (file manager) of the runtime. */
-    fun prepareDesktop(profile: RuntimeProfile): Intent? = prepareLaunch(SessionPurpose.DESKTOP, null, null, null, profile)
-
-    /** Returns the session that ended since the last call, or null while a program is still running. */
-    fun consumeFinishedSession(): FinishedSession? {
-        val pending = loadPending() ?: return null
-        val file = backend.sessionResultFile()
-        val result = parseSessionResult(file.takeIf { it.isFile }?.readText()) ?: return null
-        if (result.sessionId != null && result.sessionId != pending.sessionId) return null
-        file.delete()
+    private fun sessionEnded(pending: PendingSession, exitStatus: Int?) {
+        val ended = _active.value?.takeIf { it.sessionId == pending.sessionId }
+        finished = FinishedSession(pending, SessionResult(pending.sessionId, exitStatus, System.currentTimeMillis()))
         prefs.edit().remove(KEY_PENDING).apply()
-        return FinishedSession(pending, result)
+        if (ended != null) {
+            _active.value = null
+            onSessionEnded?.invoke(ended)
+        }
+    }
+
+    /** Ends the running program (and everything it started). */
+    fun stopSession() {
+        _active.value?.handle?.stop()
+    }
+
+    /** Opens the Windows desktop (file manager) inside a PocketOS window. */
+    fun launchDesktop(profile: RuntimeProfile): LaunchResult =
+        launch(SessionPurpose.DESKTOP, null, null, null, profile, "Windows desktop")
+
+    /**
+     * Returns the session that ended since the last call, or null while a program is still running. A session that
+     * was running when PocketOS itself was closed is returned (without an exit code) the next time PocketOS starts.
+     */
+    fun consumeFinishedSession(): FinishedSession? {
+        finished?.let { finished = null; return it }
+        if (_active.value != null) return null
+        val stale = loadPending() ?: return null
+        prefs.edit().remove(KEY_PENDING).apply()
+        return FinishedSession(stale, null)
     }
 
     fun pendingSession(): PendingSession? = loadPending()
 
     fun shortcuts(): List<InstalledShortcut> = backend.containerId()?.let { backend.shortcuts(it) }.orEmpty()
-
-    fun advancedSettingsIntent(): Intent = backend.advancedSettingsIntent()
 
     fun installedSize(): Long = backend.installedSize()
 
@@ -200,11 +259,12 @@ class RuntimeManager(
         return windowsPathFor(sampleRel)
     }
 
-    /** Stages the sample and returns the intent that runs it inside the runtime. */
-    fun prepareSampleRun(profile: RuntimeProfile): Intent? {
-        if (!isReady) return null
+    /** Stages the sample and runs it inside PocketOS. */
+    fun launchSample(profile: RuntimeProfile): LaunchResult {
+        _active.value?.let { return LaunchResult.Busy(it) }
+        if (!isReady) return LaunchResult.NotReady("Set up the Windows runtime first.")
         stageSample()
-        return prepareLaunch(SessionPurpose.SAMPLE, null, sampleRel, null, profile)
+        return launch(SessionPurpose.SAMPLE, null, sampleRel, null, profile, "Self-test")
     }
 
     /** Reads the marker the sample writes when it really runs. */
@@ -224,7 +284,7 @@ class RuntimeManager(
     }
 
     companion object {
-        const val CONTAINER_NAME = EmbeddedWinlatorBackend.CONTAINER_NAME
+        const val CONTAINER_NAME = EmbeddedWindowsBackend.CONTAINER_NAME
         private const val KEY_NONCE = "sample_nonce"
         private const val KEY_VERIFIED_AT = "sample_verified_at"
         private const val KEY_VERIFIED_VERSION = "sample_verified_version"

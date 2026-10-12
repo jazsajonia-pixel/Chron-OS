@@ -18,8 +18,8 @@ android {
         // The embedded Windows runtime starts Box64/Wine binaries from the app's private storage. Android only
         // allows that for apps targeting API 28 or lower (same as Winlator). PocketOS is distributed as an APK.
         targetSdk = 28
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -43,7 +43,18 @@ android {
         unitTests {
             isIncludeAndroidResources = true
             // ./gradlew :app:testDebugUnitTest -Ppocketos.runtimeIntegration=true unpacks the real runtime (slow, ~1 GB).
-            all { it.systemProperty("pocketos.runtimeIntegration", project.findProperty("pocketos.runtimeIntegration") ?: "false") }
+            all {
+                it.systemProperty("pocketos.runtimeIntegration", project.findProperty("pocketos.runtimeIntegration") ?: "false")
+                // ./gradlew :app:testDebugUnitTest -Ppocketos.displayPipeline=true runs a real Windows program under
+                // qemu against PocketOS's display server (needs tools/runtime/host-display-test/build.sh first).
+                val pipeline = project.findProperty("pocketos.displayPipeline")?.toString() ?: "false"
+                it.systemProperty("pocketos.displayPipeline", pipeline)
+                if (pipeline == "true") {
+                    it.systemProperty("java.library.path", rootProject.file("tools/runtime/host-display-test/out").absolutePath)
+                    System.getenv("POCKETOS_TEST_LD_PRELOAD")?.let { lib -> it.environment("LD_PRELOAD", lib); it.environment("ASAN_OPTIONS", "detect_leaks=0:handle_segv=0:allow_user_segv_handler=1") }
+                    it.systemProperty("pocketos.clickTestExe", rootProject.file("tools/runtime/host-display-test/out/click_test.exe").absolutePath)
+                }
+            }
         }
     }
     packaging {

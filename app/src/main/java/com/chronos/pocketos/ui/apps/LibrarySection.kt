@@ -306,8 +306,8 @@ internal fun StartButton(e: LibraryEntry, compact: Boolean = false, onStarted: (
     val context = LocalContext.current
     val label = if (e.isInstaller) (if (e.installerRan) "Install again" else "Install") else "Run"
     val onClick = {
-        val (intent, problem) = app.imports.start(e.id)
-        if (intent != null) { app.openRuntimeIntent(context, intent); onStarted() } else app.shell.showMessage(problem ?: "Could not start ${e.displayName}")
+        val problem = app.imports.start(e.id)
+        if (problem == null) onStarted() else app.shell.showMessage(problem)
     }
     if (compact) androidx.compose.material3.FilledTonalButton(onClick = onClick, modifier = Modifier.padding(end = 6.dp).testTag("entry_quick_start")) { Text(label) }
     else Button(onClick = onClick, modifier = Modifier.testTag("entry_start")) { Text(label) }

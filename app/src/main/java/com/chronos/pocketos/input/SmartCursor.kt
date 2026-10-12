@@ -106,8 +106,12 @@ class SmartCursor {
     /** Moves the cursor to a position inside the active desktop (px). Used by tests and keyboard accessibility. */
     fun warpTo(x: Float, y: Float) { pointer.warpTo(x, y); publish() }
 
+    /** Gets keys first (the running Windows program takes them while its window is focused). */
+    var keyInterceptor: ((android.view.KeyEvent) -> Boolean)? = null
+
     /** Forwards a key event to the active desktop surface (used when the phone window has focus). */
     fun forwardKey(event: android.view.KeyEvent): Boolean {
+        if (keyInterceptor?.invoke(event) == true) return true
         val t = targets[_activeTargetId.value ?: return false] ?: return false
         return t.rootView.dispatchKeyEvent(event)
     }

@@ -262,3 +262,19 @@ Goal from the owner: stop relying on the Winlator app; install and run `.exe` fi
   files. New opt-in `EmbeddedRuntimeIntegrationTest` exercises the real backend with the real assets. 70 core + 66 app
   tests pass; debug and release APKs build (release keeps all runtime classes).
 - Not verified: Android X server/graphics/audio on a real phone (no ARM64 device available).
+
+## 2026-10-12 — 0.3.0: Windows programs in a PocketOS window
+
+Goal from the owner: remove Winlator's screens, menus and name; programs open inside a PocketOS window controlled by
+the Smart Cursor and keyboard; the phone never switches screens. Details: `docs/PHASE7_WINDOWS_IN_POCKETOS.md`.
+
+- `winruntime/`: package `com.chronos.pocketos.windows`, `libpocketos_runtime.so`; all activities, fragments, dialogs,
+  widgets and UI resources removed; new `WindowsSession`, `DisplayHost`, `DisplayView`; no `:winruntime` process.
+- App: `RuntimeBackend.startSession` + `RuntimeSession`; `RuntimeManager.active` / `LaunchResult`; new
+  "Windows program" window (`WindowsProgramApp`) with status, Keyboard and Stop; key routing in `MainActivity`,
+  `DesktopPresentation` and Smart Cursor; "Advanced runtime settings" removed.
+- Fixed: overlapping `memcpy` in the display server's input buffer (found with AddressSanitizer); Vortek defaults no
+  longer load GPU libraries during setup.
+- New opt-in `DisplayPipelineTest` + `tools/runtime/host-display-test/`: real Windows program, real Wine, PocketOS's
+  display server, input through `DisplayView` — passes.
+- Not verified on a phone.

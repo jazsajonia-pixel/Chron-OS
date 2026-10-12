@@ -5,7 +5,7 @@ project(VortekRenderer)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -Wno-unused-function -Wimplicit-function-declaration -DVK_USE_PLATFORM_ANDROID_KHR")
 
 include_directories(include)
-include_directories(../winlator/include)
+include_directories(../pocketos_runtime/include)
 include_directories(../libadrenotools/include)
 
 add_library(vortekrenderer SHARED
@@ -23,6 +23,6 @@ add_library(vortekrenderer SHARED
 
 target_link_libraries(vortekrenderer
                       adrenotools
-                      winlator
+                      pocketos_runtime
                       log
                       android)

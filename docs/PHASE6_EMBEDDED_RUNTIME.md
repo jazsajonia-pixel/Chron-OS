@@ -1,5 +1,9 @@
 # Phase 6 — Built-in Windows runtime (no separate Winlator app)
 
+> **Updated in 0.3.0** by [PHASE7_WINDOWS_IN_POCKETOS.md](PHASE7_WINDOWS_IN_POCKETOS.md): programs now run in a
+> PocketOS window in the PocketOS process; the full-screen runtime activity and `:winruntime` process described below
+> are gone. Package id, targetSdk and asset retargeting below still apply.
+
 Supersedes the handoff design in [PHASE5_RUNTIME.md](PHASE5_RUNTIME.md). PocketOS now installs and runs `.exe` and
 `.msi` files itself.
 

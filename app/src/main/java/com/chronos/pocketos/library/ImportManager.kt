@@ -209,33 +209,35 @@ class ImportManager(
     // ---- Starting programs inside the built-in runtime ----
 
     /**
-     * Prepares a start of [id] (Run for programs, Install for installers) with the entry's current settings.
-     * Returns the intent to open, or a message explaining why it cannot start yet.
+     * Starts the entry inside PocketOS: the program opens in a PocketOS window. Returns a message for the user when
+     * it cannot start (or another program is still running), otherwise null.
      */
-    fun start(id: String): Pair<android.content.Intent?, String?> {
-        val e = library.get(id) ?: return null to "This entry no longer exists."
-        if (!runtime.isReady) return null to "Set up the Windows runtime first (PC Apps \u2192 Runtime)."
-        if (e.status == AppStatus.UNSUPPORTED) return null to e.statusDetail
+    fun start(id: String): String? {
+        val e = library.get(id) ?: return "This entry no longer exists."
+        if (!runtime.isReady) return "Set up the Windows runtime first (PC Apps \u2192 Runtime)."
+        if (e.status == AppStatus.UNSUPPORTED) return e.statusDetail
         val purpose = if (e.isInstaller) SessionPurpose.INSTALL else SessionPurpose.RUN
         // .desktop shortcuts carry their own start command; .lnk and .exe files are started directly.
         val lnk = e.shortcutPath?.takeIf { it.endsWith(".lnk", ignoreCase = true) || it.endsWith(".exe", ignoreCase = true) }
         val desktop = e.shortcutPath?.takeIf { lnk == null }
         if (e.stagedPath != null && !File(runtime.programsDir, e.stagedPath!!).isFile) {
-            return null to "PocketOS's copy of ${e.sourceFileName} is missing. Import the file again."
+            return "PocketOS's copy of ${e.sourceFileName} is missing. Import the file again."
         }
-        val intent = runtime.prepareLaunch(purpose, e.id, e.stagedPath, desktop, e.profile)
-            ?.also { if (lnk != null) it.putExtra("exec_path", lnk) }
-            ?: return null to "The Windows runtime is not ready."
+        when (val r = runtime.launch(purpose, e.id, e.stagedPath, desktop, e.profile, e.displayName, execPath = lnk)) {
+            is RuntimeManager.LaunchResult.Busy -> return "${r.running.title} is still running. Close its window first."
+            is RuntimeManager.LaunchResult.NotReady -> return r.message
+            is RuntimeManager.LaunchResult.Started -> Unit
+        }
         val now = clock()
         library.modify(id) {
             it.copy(lastRunAt = now, installerRan = it.installerRan || purpose == SessionPurpose.INSTALL)
                 .withLog(now, (if (purpose == SessionPurpose.INSTALL) "Started the installer" else "Started") + " with ${it.profile.label}")
         }
-        return intent to null
+        return null
     }
 
     /**
-     * Called whenever PocketOS comes back to the front. If a program PocketOS started has exited, records the
+     * Called when a Windows program ends (and when PocketOS starts). If a program PocketOS started has exited, records the
      * result; after an installer, adds the programs it installed to the library. Returns a message for the user.
      */
     fun onReturnFromRuntime(): String? {

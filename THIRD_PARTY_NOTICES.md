@@ -12,10 +12,10 @@ JUnit 4 (EPL-1.0), Robolectric (MIT), AndroidX Test (Apache-2.0). Fixtures were 
 licence) and msitools/wixl (LGPL-2.1+ tools; the produced MSI is project data) and exercised with Wine (LGPL-2.1+) on the
 build host only.
 
-## Not bundled — user-installed separately
+## Bundled Windows runtime
 | Component | Licence | Notes |
 |---|---|---|
-| Winlator (winlator-app, commit 3981d86) — https://github.com/brunodev85/winlator-app | LGPL-2.1 | **Bundled** as the `winruntime/` module with modifications (see `winruntime/MODIFICATIONS.md`); full source is in this repository |
+| Winlator (winlator-app, commit 3981d86) — https://github.com/brunodev85/winlator-app | LGPL-2.1 | **Bundled** as the `winruntime/` module, heavily modified (renamed to package `com.chronos.pocketos.windows`, all of its own screens removed; see `winruntime/MODIFICATIONS.md`); full source is in this repository |
 | Wine 10.10 — https://www.winehq.org | LGPL-2.1+ | Bundled inside the runtime archives (prebuilt by Winlator) |
 | Box64 0.4.4 — https://github.com/ptitSeb/box64 | MIT | Bundled inside the runtime archives |
 | Mesa (Turnip, VirGL, Zink), virglrenderer, DXVK, VKD3D-Proton, glibc, PulseAudio, FluidSynth | MIT / LGPL / zlib (per project) | Bundled inside the runtime archives / native libraries, unmodified except for the install-path retargeting |

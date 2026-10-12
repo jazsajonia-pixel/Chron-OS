@@ -48,7 +48,7 @@ add_library(virglrenderer SHARED
             src/gallium/auxiliary/os/os_misc.c)
 
 target_link_libraries(virglrenderer
-                      winlator
+                      pocketos_runtime
                       log
                       android
                       EGL

@@ -33,14 +33,20 @@ no Bluetooth/USB peripherals). Run them on real hardware and record the results 
       (behaviour of Presentation windows while the activity is stopped varies by device).
 - [ ] Note where the on-screen keyboard appears when a text field on the monitor is focused.
 
-## Built-in Windows runtime (ARM64 phone, PocketOS 0.2.0)
-- [ ] Uninstall PocketOS 0.1.0 (`com.chronos.pocketos`) first; install 0.2.0 (`com.chron.os`). Note any "older Android version" notice.
+## Built-in Windows runtime (ARM64 phone, PocketOS 0.3.0)
+- [ ] Uninstall PocketOS 0.1.0 (`com.chronos.pocketos`) first; install 0.3.0 (`com.chron.os`, updates 0.2.0 in place). Note any "older Android version" notice.
 - [ ] PC Apps → Runtime → "Set up": progress reaches 100 %, status "Ready". Record the time it took and free space before/after.
-- [ ] "Run self-test": a full-screen Windows desktop opens, the sample runs, PocketOS returns and shows "Passed". Record time to first start.
-- [ ] "Open Windows desktop": the Windows file manager opens; drives D: (programs) and E: (PocketOS Home) are visible.
-- [ ] Touch moves the mouse, tap clicks; back gesture opens the runtime menu; keyboard appears from the menu; "Exit" returns to PocketOS.
+- [ ] "Run self-test": a "Self-test" window opens on the PocketOS desktop (the phone stays on PocketOS), the sample runs, the window closes and PocketOS shows "Passed". Record time to first start.
+- [ ] "Open Windows desktop": a "Windows desktop" window opens with the file manager; drives D: (programs) and E: (PocketOS Home) are visible.
+- [ ] Smart Cursor over the program window moves the Windows pointer; tap clicks; two-finger tap right-clicks; two-finger scroll scrolls.
+- [ ] Touching the program window directly also clicks where you touch. A USB/Bluetooth mouse works over it.
+- [ ] Hardware keyboard types into the program while its window is focused; Alt+Tab / Meta still control PocketOS.
+- [ ] The window's Keyboard button shows the on-screen keyboard and typed text reaches the program.
+- [ ] Move, resize, maximise and minimise the program window; restore it: the program is still running and redraws.
+- [ ] Closing the window (or Stop → confirm) ends the program; starting another program then works.
+- [ ] On an external monitor: the program window appears on the monitor desktop; the phone touchpad controls it.
 - [ ] Press Home while a program runs, then reopen PocketOS: the program is still running (notification shown).
-- [ ] Paste a real runtime log (menu → Logs) into "Explain a runtime error" and note whether the explanation was helpful.
+- [ ] Paste real error text from a program into "Explain a runtime error" and note whether the explanation was helpful.
 - [ ] Record GPU (Adreno/Mali) and whether "Compatibility graphics" changes anything for a program that draws wrongly.
 
 ## PC Apps library

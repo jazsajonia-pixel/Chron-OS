@@ -1,13 +1,14 @@
 package com.chronos.pocketos.runtime
 
 import android.content.Context
-import android.content.Intent
+import android.view.KeyEvent
+import android.view.View
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.InstalledShortcut
 
 /**
- * The part of the Windows runtime that touches the embedded engine. The real implementation is
- * [EmbeddedWinlatorBackend]; unit tests use a fake so they run on any machine.
+ * The part of the Windows runtime that touches the engine (Wine, Box64 and PocketOS's display server). The real
+ * implementation is [EmbeddedWindowsBackend]; unit tests use a fake so they run on any machine.
  */
 interface RuntimeBackend {
     /** True when the Linux userland, Wine and Box64 are unpacked and current. */
@@ -29,34 +30,46 @@ interface RuntimeBackend {
     fun applyProfile(containerId: Int, profile: RuntimeProfile)
 
     /**
-     * Intent that opens the runtime's display and starts [unixPath] (a .exe, .msi or .lnk), or the Windows desktop
-     * when both paths are null. [shortcutPath] is a .desktop shortcut created by an installer.
+     * Starts [unixPath] (a .exe, .msi, .bat or .lnk) or the shortcut at [shortcutPath] (a .desktop file an installer
+     * created), or the Windows desktop when both are null. The program is drawn by the returned session into a view
+     * that PocketOS shows in one of its own windows. Call on the main thread.
      */
-    fun launchIntent(containerId: Int, unixPath: String?, shortcutPath: String?, sessionId: String): Intent
+    fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents): RuntimeSession
 
     /** Every program shortcut that installers created inside the container. */
     fun shortcuts(containerId: Int): List<InstalledShortcut>
-
-    /** The engine's own settings screens (containers, Box64 presets, drivers, input controls). */
-    fun advancedSettingsIntent(): Intent
-
-    /** Folder where the runtime writes the result of a session that PocketOS started. */
-    fun sessionResultFile(): java.io.File
 
     /** Bytes the runtime's system files and Windows environment use. */
     fun installedSize(): Long
 }
 
-/** Session result written by the runtime process when a program started from PocketOS exits. */
+/** What a running session reports back. All callbacks arrive on the main thread. */
+interface SessionEvents {
+    fun onStatus(message: String)
+    fun onReady()
+    /** Called once; [exitStatus] is null when unknown (e.g. the user stopped the program). */
+    fun onEnded(exitStatus: Int?)
+}
+
+/** A running Windows program. Its display can be shown in any number of views over time, one at a time. */
+interface RuntimeSession {
+    /** Creates the view that shows the program and passes touch, mouse and keyboard input to it. */
+    fun createView(context: Context): View
+
+    /** Sends a key to the program. Returns false if Windows has no equivalent key. */
+    fun sendKey(event: KeyEvent): Boolean
+
+    /** Types text into the program, e.g. from the Smart Cursor's text box. */
+    fun typeText(text: CharSequence)
+
+    /** Shows the phone's on-screen keyboard for the program's view. */
+    fun showSoftKeyboard()
+
+    /** Ends the program and everything it started. */
+    fun stop()
+}
+
+/** Result of a session PocketOS started. */
 data class SessionResult(val sessionId: String?, val exitStatus: Int?, val endedAt: Long)
 
-internal fun parseSessionResult(text: String?): SessionResult? = runCatching {
-    val o = org.json.JSONObject(text ?: return null)
-    SessionResult(
-        sessionId = o.optString("sessionId").takeIf { it.isNotEmpty() },
-        exitStatus = if (o.has("exitStatus")) o.getInt("exitStatus") else null,
-        endedAt = o.optLong("endedAt"),
-    )
-}.getOrNull()
-
-fun Context.defaultRuntimeBackend(): RuntimeBackend = EmbeddedWinlatorBackend(this)
+fun Context.defaultRuntimeBackend(): RuntimeBackend = EmbeddedWindowsBackend(this)

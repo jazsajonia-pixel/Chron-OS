@@ -19,7 +19,7 @@ Status: version 0.2.0, development build. Verified with automated tests and ARM6
 | Mouse & keyboard | USB/Bluetooth mouse and keyboard, shortcuts (Ctrl+Esc, Alt+Tab, Ctrl+Alt+Arrows, Alt+F4, …) | Some phones intercept shortcuts such as Alt+Tab |
 | External monitor | Desktop on a monitor via Android's Presentation API; phone becomes touchpad/keyboard; desktop size control; safe fallback on unplug | **Many phones have no video output** or only mirror the screen. Settings → Display shows what your phone reports |
 | Hardware-aware setup | Reads CPU ABIs, memory, GPU API levels, thermal and battery state; picks Battery saver / Balanced / Performance automatically (overridable) | Unknown values are shown as "Unknown", never guessed |
-| PC Apps (.exe/.msi) | **Built-in Windows runtime** (Wine 10.10 + Box64 0.4.4, based on Winlator): checks files first, then **runs programs and installers inside PocketOS**; programs an installer creates appear in the library automatically; one-tap self-test; settings and up to 3 fixes applied automatically; known-good settings remembered | 64-bit ARM phones only. Needs about 520 MB once set up. **Not every Windows program works**, and results differ between phones |
+| PC Apps (.exe/.msi) | **Built-in Windows runtime** (Wine 10.10 + Box64 0.4.4): checks files first, then **runs programs and installers in a PocketOS window** on the desktop (no other screen opens); programs an installer creates appear in the library automatically; one-tap self-test; settings and up to 3 fixes applied automatically; known-good settings remembered | 64-bit ARM phones only. Needs about 520 MB once set up. **Not every Windows program works**, and results differ between phones |
 | Diagnostics | Sanitized event log, crash notice and safe start, storage cleanup, compatibility report with preview before sharing | Nothing is uploaded automatically |
 
 ## Install
@@ -59,8 +59,10 @@ The release build is signed with the **debug key** so it can be installed for te
 - PC programs: first, PC Apps → Runtime → "Set up" (one time, unpacks the built-in Windows runtime; no download).
   Then PC Apps → Library → "Add program", pick a `.exe` or `.msi`. PocketOS checks the file, explains what it found and
   keeps a copy. Tap **Install** for installers (the programs they install are added to the library) or **Run** for
-  programs. They open full screen: touch moves the mouse, tap clicks, the back gesture opens the runtime menu
-  (keyboard, controls, exit). Afterwards report "It worked" / "It didn't work"; PocketOS remembers working settings
+  programs. The program opens in a normal PocketOS window on your desktop — move, resize or minimise it like any other
+  window. The Smart Cursor (or a mouse) controls it, a keyboard types into it while its window is focused, and the
+  window's Keyboard button shows the on-screen keyboard. Close the window (or press Stop) to end the program. The
+  phone never switches to another screen. Afterwards report "It worked" / "It didn't work"; PocketOS remembers working settings
   or applies the next fix automatically. "Run self-test" in the Runtime tab proves that Windows programs start on
   your phone.
 
@@ -81,10 +83,11 @@ The release build is signed with the **debug key** so it can be installed for te
 - Smart Cursor and shortcuts work inside PocketOS only (no input injection into other apps, by design).
 - The built-in Windows runtime requires a 64-bit ARM phone. Compatibility of any given program is not guaranteed;
   games and programs that need special drivers, anti-cheat or kernel components will not work.
-- The app targets Android API 28 because the runtime starts its own Linux programs (as Winlator does). Some Android
+- The app targets Android API 28 because the runtime starts its own Linux programs from app storage. Some Android
   versions show an "older Android version" notice when installing; it cannot be published on Google Play this way.
 - The application id is `com.chron.os` (was `com.chronos.pocketos`); uninstall 0.1.0 first — see
   [docs/PHASE6_EMBEDDED_RUNTIME.md](docs/PHASE6_EMBEDDED_RUNTIME.md) for why it must not change.
+- One Windows program (or installer) runs at a time; close its window before starting another.
 - Not yet tested on a physical phone, emulator, monitor, mouse or keyboard — see below.
 
 ## Testing status
@@ -125,7 +128,7 @@ Manual test steps for real hardware: [docs/HARDWARE_TEST_CHECKLIST.md](docs/HARD
 ```
 core/   Pure Kotlin/JVM logic (window manager, input, display policy, capabilities, runtime rules, PE inspector, library, diagnostics)
 app/    Android app (Jetpack Compose UI, Android integrations)
-winruntime/  Built-in Windows runtime (Winlator-derived, LGPL-2.1): X server, Wine/Box64 launcher, runtime files
+winruntime/  Built-in Windows runtime (derived from Winlator, LGPL-2.1): display server, Wine/Box64 launcher, runtime files
 docs/   Audit, development log, runtime feasibility, hardware test checklist
 tools/pe-fixtures/  Sources and build script for the Windows test fixtures
 tools/runtime/  Scripts used to adapt the runtime (path retargeting, library conversion)

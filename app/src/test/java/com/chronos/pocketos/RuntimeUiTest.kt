@@ -103,11 +103,10 @@ class RuntimeUiTest {
         ready(); openRuntimeTab()
         rule.onNodeWithTag("sample_run").performScrollTo().performClick()
         rule.waitForIdle()
-        val started = shadowOf(app).nextStartedActivity
-        assertEquals("com.winlator.XServerDisplayActivity", started.component?.className)
-        assertEquals(app.packageName, started.component?.packageName)
-        assertTrue(started.getBooleanExtra("pocketos_hosted", false))
-        val exe = File(started.getStringExtra("exec_path")!!)
+        // The sample runs in a PocketOS window, not in another screen.
+        assertEquals(null, shadowOf(app).nextStartedActivity)
+        assertEquals("winprogram", app.shell.desktop.value.focused?.appId)
+        val exe = File(fake.lastLaunch!!.unixPath!!)
         assertEquals(File(app.runtime.programsDir, "PocketOS Sample/pocketos-sample.exe"), exe)
         val bundled = app.assets.open("sample/pocketos-sample.exe").use { it.readBytes() }
         assertArrayEquals(bundled, exe.readBytes())
@@ -117,9 +116,9 @@ class RuntimeUiTest {
         // Simulate the runtime: write exactly what the real sample wrote under Wine 10 (tools/pe-fixtures/README.md),
         // then the session result the runtime process writes on exit.
         File(exe.parentFile, "pocketos_sample_ok.txt").writeText("POCKETOS_FIXTURE_OK $nonce\r\n")
-        fake.finishSession(0)
-        val msg = rule.runOnIdle { app.imports.onReturnFromRuntime() }
-        assertTrue(msg!!.contains("Self-test passed"))
+        rule.runOnIdle { fake.finishSession(0) }
+        rule.waitForIdle()
+        assertTrue(app.shell.ui.value.message!!.contains("Self-test passed"))
         assertEquals(SampleResult.VERIFIED, app.runtime.sample.value.result)
         rule.onNodeWithTag("sample_result").performScrollTo().assertTextContains("Passed", substring = true)
         // Persisted across restarts.
@@ -139,14 +138,17 @@ class RuntimeUiTest {
         assertEquals(SampleResult.STALE_OR_FOREIGN, app.runtime.checkSample())
     }
 
-    @Test fun windowsDesktopAndAdvancedSettingsOpenInsidePocketOs() {
+    @Test fun windowsDesktopOpensInAPocketOsWindowAndThereAreNoRuntimeScreens() {
         ready(); openRuntimeTab()
         rule.onNodeWithTag("runtime_desktop").performClick()
-        val desktop = shadowOf(app).nextStartedActivity
-        assertEquals("com.winlator.XServerDisplayActivity", desktop.component?.className)
-        assertTrue(!desktop.hasExtra("exec_path"))
-        rule.onNodeWithTag("runtime_advanced").performClick()
-        assertEquals("com.winlator.MainActivity", shadowOf(app).nextStartedActivity.component?.className)
+        rule.waitForIdle()
+        assertEquals(null, shadowOf(app).nextStartedActivity)
+        val launch = fake.lastLaunch!!
+        assertEquals(null, launch.unixPath); assertEquals(null, launch.shortcutPath)
+        assertEquals("Windows desktop", app.shell.desktop.value.focused?.title)
+        // The runtime's own settings screens are gone.
+        assertEquals(0, rule.onAllNodesWithTag("runtime_advanced").fetchSemanticsNodes().size)
+        rule.runOnIdle { app.runtime.stopSession() }
     }
 
     @Test fun logExplainerTranslatesRealWineOutput() {

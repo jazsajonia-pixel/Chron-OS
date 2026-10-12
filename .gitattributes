@@ -1,1 +1,2 @@
 apk/PocketOS-0.2.0-*.apk filter=lfs diff=lfs merge=lfs -text
+apk/PocketOS-0.3.0-*.apk filter=lfs diff=lfs merge=lfs -text

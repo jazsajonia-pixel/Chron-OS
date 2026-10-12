@@ -1,7 +1,6 @@
 package com.chronos.pocketos.ui.apps
 
 import android.content.Context
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -35,10 +34,16 @@ import com.chronos.pocketos.core.runtime.SampleResult
 import com.chronos.pocketos.ui.components.KeyValue
 import com.chronos.pocketos.ui.components.SectionTitle
 
-/** Opens an intent from the runtime, reporting failures instead of crashing. */
-internal fun PocketOsApp.openRuntimeIntent(context: Context, intent: Intent?, failure: String = "The Windows runtime could not be opened") {
-    if (intent == null) { shell.showMessage(failure); return }
-    runCatching { context.startActivity(intent) }.onFailure { shell.showMessage("$failure: ${it.message ?: it.javaClass.simpleName}") }
+/** Reports why a Windows program could not start (it opens in its own PocketOS window when it does). */
+internal fun PocketOsApp.reportLaunch(result: com.chronos.pocketos.runtime.RuntimeManager.LaunchResult) {
+    when (result) {
+        is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.Busy -> {
+            shell.showMessage("${result.running.title} is still running. Close its window first.")
+            shell.showWindowsProgram(result.running.title)
+        }
+        is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.NotReady -> shell.showMessage(result.message)
+        is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.Started -> Unit
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -78,8 +83,7 @@ fun RuntimeSection() {
                 modifier = Modifier.testTag("runtime_install"),
             ) { Text(if (state is RuntimeState.Failed) "Try again" else "Set up (about ${rm.runtime.installedBytes / (1024 * 1024)} MB)") }
             RuntimeState.Ready -> {
-                Button(onClick = { app.openRuntimeIntent(context, rm.prepareDesktop(profile)) }, modifier = Modifier.testTag("runtime_desktop")) { Text("Open Windows desktop") }
-                OutlinedButton(onClick = { app.openRuntimeIntent(context, rm.advancedSettingsIntent()) }, modifier = Modifier.testTag("runtime_advanced")) { Text("Advanced runtime settings") }
+                Button(onClick = { app.reportLaunch(rm.launchDesktop(profile)) }, modifier = Modifier.testTag("runtime_desktop")) { Text("Open Windows desktop") }
                 OutlinedButton(onClick = { rm.install(profile) }, modifier = Modifier.testTag("runtime_repair")) { Text("Repair") }
             }
             else -> {}
@@ -101,14 +105,14 @@ fun RuntimeSection() {
             )
             FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = { app.openRuntimeIntent(context, rm.prepareSampleRun(profile), "Set up the runtime first") },
+                    onClick = { app.reportLaunch(rm.launchSample(profile)) },
                     enabled = state is RuntimeState.Ready, modifier = Modifier.testTag("sample_run"),
                 ) { Text(if (sample.staged) "Run self-test again" else "Run self-test") }
                 OutlinedButton(onClick = { rm.checkSample() }, enabled = sample.staged, modifier = Modifier.testTag("sample_check")) { Text("Check result") }
             }
             val resultText = when (sample.result) {
                 SampleResult.VERIFIED -> "Passed: the sample ran in ${rm.runtime.name}" + (sample.runtimeVersion?.let { " ($it)" } ?: "") + " on this phone."
-                SampleResult.NOT_RUN_YET -> "No result yet. If the sample window is still open, close it, then check again."
+                SampleResult.NOT_RUN_YET -> "No result yet. If the self-test window is still open, wait a moment, then check again."
                 SampleResult.STALE_OR_FOREIGN -> "The note found is from an older run. Run the self-test again."
                 null -> null
             }
@@ -118,13 +122,13 @@ fun RuntimeSection() {
 
     SectionTitle("Using Windows programs")
     listOf(
-        "Tap a program in Library, then Run (or Install for installers). It opens full screen.",
-        "Touch the screen to move the mouse; tap to click. Swipe in from the left edge (or press Back) for the menu: keyboard, controls, exit.",
-        "When the program closes you return to PocketOS. Installed programs appear in your library automatically.",
+        "Tap a program in Library, then Run (or Install for installers). It opens in a PocketOS window on your desktop; you can move, resize, maximize and minimize it like any other window.",
+        "Tap or click inside the window to click in the program. Use the Smart Cursor or a mouse for right-click and scrolling, and \"Keyboard\" on the window's bar to type.",
+        "Closing the window (or \"Stop\") ends the program. Programs that an installer added appear in your library automatically.",
     ).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
 
     SectionTitle("Explain a runtime error")
-    OutlinedTextField(log, { log = it }, label = { Text("Paste log text (runtime menu \u2192 Logs)") }, minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("log_input"))
+    OutlinedTextField(log, { log = it }, label = { Text("Paste error text from a program") }, minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("log_input"))
     val errors = remember(log) { RuntimeLogTranslator.translate(log) }
     if (log.isNotBlank() && errors.isEmpty()) Text("No known problem found in this text.", style = MaterialTheme.typography.bodySmall)
     errors.forEach { e ->

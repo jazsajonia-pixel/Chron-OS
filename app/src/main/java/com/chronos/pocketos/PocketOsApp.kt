@@ -45,20 +45,12 @@ open class PocketOsApp : Application() {
     /** True while the companion screen's own text box has focus (keys then stay on the phone). */
     @Volatile var companionTextFocused = false
 
-    /** The embedded Windows runtime runs in its own ":winruntime" process, which needs none of the desktop. */
-    val isRuntimeProcess: Boolean by lazy {
-        val name = if (android.os.Build.VERSION.SDK_INT >= 28) getProcessName()
-        else runCatching { java.io.File("/proc/self/cmdline").readText().trim('\u0000') }.getOrDefault("")
-        name.endsWith(":winruntime")
-    }
-
     /** Overridden by tests with a fake; the real backend drives the embedded Wine/Box64 runtime. */
     open fun createRuntimeBackend(): com.chronos.pocketos.runtime.RuntimeBackend =
-        com.chronos.pocketos.runtime.EmbeddedWinlatorBackend(this)
+        com.chronos.pocketos.runtime.EmbeddedWindowsBackend(this)
 
     override fun onCreate() {
         super.onCreate()
-        if (isRuntimeProcess) return
         settings = SettingsRepository(this)
         diagnostics = com.chronos.pocketos.diag.DiagnosticsCenter(this)
         diagnostics.installCrashHandler()
@@ -96,7 +88,58 @@ open class PocketOsApp : Application() {
         } }
         appScope.launch { displays.state.collect { s -> s.lastEvent?.let { diagnostics.add("display", it) } } }
         appScope.launch { input.summary.collect { diagnostics.add("input", "Keyboards ${it.keyboards.size}, mice ${it.mice.size}, controllers ${it.gamepads.size}") } }
+        connectWindowsPrograms()
         seedHome()
+    }
+
+    /**
+     * A running Windows program lives in a PocketOS window: the window opens when the program starts, closing it ends
+     * the program, and when the program ends by itself the window closes and PocketOS reports what happened.
+     */
+    private fun connectWindowsPrograms() {
+        val programApp = com.chronos.pocketos.shell.AppIds.WINDOWS_PROGRAM
+        appScope.launch {
+            var shownSession: String? = null
+            runtime.active.collect { s ->
+                if (s != null && s.sessionId != shownSession) {
+                    shownSession = s.sessionId
+                    shell.showWindowsProgram(s.title)
+                    diagnostics.add("runtime", "Started ${s.title}")
+                }
+                if (s == null) shownSession = null
+            }
+        }
+        shell.onWindowClosed = { w -> if (w.appId == programApp) runtime.stopSession() }
+        runtime.onSessionEnded = { s ->
+            shell.closeApp(programApp)
+            diagnostics.add("runtime", "Ended ${s.title}")
+            imports.onReturnFromRuntime()?.let(shell::showMessage)
+        }
+        cursor.keyInterceptor = { routeKeyToWindows(it) }
+    }
+
+    /** The running Windows program, if its window is the focused, visible window. */
+    fun focusedWindowsProgram(): com.chronos.pocketos.runtime.RuntimeSession? {
+        val s = runtime.active.value ?: return null
+        val w = shell.desktop.value.focused ?: return null
+        if (w.appId != com.chronos.pocketos.shell.AppIds.WINDOWS_PROGRAM || w.mode == com.chronos.pocketos.core.window.WindowMode.MINIMIZED) return null
+        if (shell.ui.value.launcherOpen || shell.ui.value.switcherOpen) return null
+        return s.handle
+    }
+
+    /**
+     * Gives a key to the focused Windows program. PocketOS keeps the Windows/Meta key chords and Alt+Tab (to reach
+     * its own launcher and windows) and the Back key; everything else goes to the program.
+     */
+    fun routeKeyToWindows(event: android.view.KeyEvent): Boolean {
+        if (companionTextFocused) return false
+        val target = focusedWindowsProgram() ?: return false
+        val code = event.keyCode
+        val pocketKey = event.isMetaPressed || code == android.view.KeyEvent.KEYCODE_META_LEFT ||
+            code == android.view.KeyEvent.KEYCODE_META_RIGHT || code == android.view.KeyEvent.KEYCODE_BACK ||
+            code == android.view.KeyEvent.KEYCODE_HOME || (event.isAltPressed && code == android.view.KeyEvent.KEYCODE_TAB)
+        if (pocketKey) return false
+        return target.sendKey(event)
     }
 
     private fun seedHome() {

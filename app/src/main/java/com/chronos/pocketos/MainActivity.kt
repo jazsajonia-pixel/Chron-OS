@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
     // Activity.dispatchKeyEvent is public platform API; lint flags only androidx.core's @RestrictTo override (false positive).
     @android.annotation.SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // The focused Windows program gets the keyboard (PocketOS keeps the Windows-key chords and Alt+Tab).
+        if (pocket.routeKeyToWindows(event)) return true
         if (pocket.keys.handle(event)) return true
         // While the desktop is on the monitor, typing on a physical keyboard goes to the external desktop.
         if (presentation?.isShowing == true && !pocket.companionTextFocused) {
@@ -108,7 +110,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Back from a Windows program: record how it ended, verify the self-test, pick up newly installed programs.
+        // A program that was running when PocketOS was last closed: record it and pick up anything it installed.
         pocket.runtime.refresh()
         pocket.imports.onReturnFromRuntime()?.let(pocket.shell::showMessage)
     }

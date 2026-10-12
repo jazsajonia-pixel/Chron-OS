@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Embedded Windows runtime (derived from Winlator, LGPL-2.1). Everything runs in the separate ":winruntime"
-     process so a crash or exit of a Windows program never takes down the PocketOS desktop. -->
+<!-- PocketOS built-in Windows runtime. It has no screens of its own: Windows programs are drawn inside PocketOS
+     windows. Wine, Box64 and the Windows programs run as separate child processes, so a crashing program does not
+     take down the PocketOS desktop. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-feature android:glEsVersion="0x00020000" android:required="true" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
 
-    <!-- Networking for Windows programs (and the runtime's network info for Wine). -->
+    <!-- Networking for Windows programs (and the network info Wine reads). -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -16,62 +17,23 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application android:extractNativeLibs="true">
-        <!-- Advanced runtime settings (containers, Box64 presets, drivers). Opened from PocketOS only. -->
-        <activity
-            android:name="com.winlator.MainActivity"
-            android:process=":winruntime"
-            android:theme="@style/AppThemeDark"
-            android:exported="false"
-            android:screenOrientation="sensor"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation" />
-
-        <activity
-            android:name="com.winlator.XServerDisplayActivity"
-            android:process=":winruntime"
-            android:exported="false"
-            android:theme="@style/AppThemeFullscreenDark"
-            android:supportsPictureInPicture="true"
-            android:launchMode="singleTask"
-            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|density|navigation"
-            android:screenOrientation="sensorLandscape" />
-
-        <activity
-            android:name="com.winlator.ControlsEditorActivity"
-            android:process=":winruntime"
-            android:exported="false"
-            android:theme="@style/AppThemeFullscreenDark"
-            android:screenOrientation="sensorLandscape" />
-
-        <activity
-            android:name="com.winlator.ExternalControllerBindingsActivity"
-            android:process=":winruntime"
-            android:theme="@style/AppThemeDark"
-            android:exported="false"
-            android:screenOrientation="sensor" />
-
         <!-- Keeps a running Windows program alive while the screen is off or PocketOS is in the background. -->
         <service
-            android:name="com.winlator.services.ForegroundService"
-            android:process=":winruntime"
+            android:name="com.chronos.pocketos.windows.services.ForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false" />
 
+        <!-- Lets Windows programs open files and links with Android apps. -->
         <provider
-            android:name="com.winlator.core.WinlatorFileProvider"
-            android:authorities="${applicationId}.winlator.FileProvider"
-            android:process=":winruntime"
+            android:name="com.chronos.pocketos.windows.core.RuntimeFileProvider"
+            android:authorities="${applicationId}.windows.FileProvider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-        <provider
-            android:name="com.winlator.core.RuntimeStartupProvider"
-            android:authorities="${applicationId}.winruntime-startup"
-            android:process=":winruntime"
-            android:exported="false" />
     </application>
 </manifest>

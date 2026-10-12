@@ -127,18 +127,25 @@ class LibraryUiTest {
         waitDone()
         val installer = app.library.state.value.entries.single()
         rule.onNodeWithTag("entry_start").performScrollTo().assertTextContains("Install").performClick()
-        val started = shadowOf(app).nextStartedActivity
-        assertEquals("com.winlator.XServerDisplayActivity", started.component?.className)
-        assertEquals(File(app.runtime.programsDir, installer.stagedPath!!).path, started.getStringExtra("exec_path"))
+        rule.waitForIdle()
+        // The installer runs inside a PocketOS window; no other screen is opened.
+        assertNull(shadowOf(app).nextStartedActivity)
+        val launch = app.fakeRuntime.lastLaunch!!
+        assertEquals(File(app.runtime.programsDir, installer.stagedPath!!).path, launch.unixPath)
         assertEquals(installer.profile, app.fakeRuntime.appliedProfiles.last())
+        assertEquals("winprogram", app.shell.desktop.value.focused?.appId)
+        assertEquals(installer.displayName, app.shell.desktop.value.focused?.title)
 
         // The installer creates a program shortcut and an uninstaller shortcut, then exits.
         val root = "/data/data/com.chron.os/files/rootfs/home/xuser-1"
         app.fakeRuntime.shortcutList += InstalledShortcut("Sample Notes", "$root/.wine/drive_c/users/xuser/Desktop/Sample Notes.desktop")
         app.fakeRuntime.shortcutList += InstalledShortcut("Uninstall Sample Notes", "$root/.local/share/applications/wine/Programs/Sample Notes/Uninstall Sample Notes.desktop")
-        app.fakeRuntime.finishSession(0)
-        val msg = rule.runOnIdle { app.imports.onReturnFromRuntime() }!!
+        rule.runOnIdle { app.fakeRuntime.finishSession(0) }
+        rule.waitForIdle()
+        // When the installer ends its window closes and PocketOS reports what was installed.
+        val msg = app.shell.ui.value.message!!
         assertTrue(msg, msg.contains("Installed and added to your library: Sample Notes"))
+        assertTrue(app.shell.desktop.value.windows.values.none { it.appId == "winprogram" })
         val entries = app.library.state.value.entries
         assertEquals(2, entries.size)
         val program = entries.single { it.id != installer.id }
@@ -147,9 +154,10 @@ class LibraryUiTest {
         assertTrue(app.library.get(installer.id)!!.installerRan)
 
         // Starting the installed program uses its shortcut.
-        val (intent, problem) = rule.runOnIdle { app.imports.start(program.id) }
+        val problem = rule.runOnIdle { app.imports.start(program.id) }
         assertNull(problem)
-        assertEquals(program.shortcutPath, intent!!.getStringExtra("shortcut_path"))
+        assertEquals(program.shortcutPath, app.fakeRuntime.lastLaunch!!.shortcutPath)
+        rule.runOnIdle { app.runtime.stopSession() }
         // Nothing new appears when looking again.
         assertTrue(rule.runOnIdle { app.imports.findInstalledPrograms(installer.id) }.isEmpty())
     }
@@ -160,13 +168,15 @@ class LibraryUiTest {
         open()
         importFile("hello_gui_x64.exe"); rule.onNodeWithTag("wiz_confirm").performScrollTo().performClick(); waitDone()
         val id = app.library.state.value.entries.single().id
-        val (none, why) = rule.runOnIdle { app.imports.start(id) }
-        assertNull(none); assertTrue(why!!.contains("Set up the Windows runtime"))
+        val why = rule.runOnIdle { app.imports.start(id) }
+        assertTrue(why!!.contains("Set up the Windows runtime"))
+        assertNull(app.fakeRuntime.lastLaunch)
         readyEnvironment()
-        val (intent, _) = rule.runOnIdle { app.imports.start(id) }
-        assertTrue(intent!!.getBooleanExtra("pocketos_hosted", false))
-        app.fakeRuntime.finishSession(3)
-        assertTrue(rule.runOnIdle { app.imports.onReturnFromRuntime() }!!.contains("Did it work?"))
+        assertNull(rule.runOnIdle { app.imports.start(id) })
+        assertEquals(app.library.get(id)!!.displayName, app.runtime.active.value?.title)
+        rule.runOnIdle { app.fakeRuntime.finishSession(3) }
+        rule.waitForIdle()
+        assertTrue(app.shell.ui.value.message!!.contains("Did it work?"))
         val e = app.library.get(id)!!
         assertEquals(3, e.lastExitCode)
         assertTrue(e.statusDetail.contains("exit code 3"))
@@ -212,8 +222,7 @@ class LibraryUiTest {
         rule.runOnIdle { app.imports.dismiss() }
         val id = app.library.state.value.entries.single().id
         rule.runOnIdle { app.imports.start(id) }
-        app.fakeRuntime.finishSession(0)
-        rule.runOnIdle { app.imports.onReturnFromRuntime() }
+        rule.runOnIdle { app.fakeRuntime.finishSession(0) }
         rule.onNodeWithTag("lib_entry").performClick()
         rule.onNodeWithTag("entry_failed").performScrollTo().performClick()
         assertEquals(AppStatus.FAILED, app.library.get(id)!!.status)
@@ -226,6 +235,7 @@ class LibraryUiTest {
         // The fix is applied automatically on the next start.
         rule.runOnIdle { app.imports.start(id) }
         assertEquals(1024, app.fakeRuntime.appliedProfiles.last().width)
+        rule.runOnIdle { app.runtime.stopSession() } // its window would cover the library
         repeat(2) { rule.runOnIdle { app.imports.reportFailed(id); app.imports.applyNextRecovery(id) } }
         e = app.library.get(id)!!
         assertEquals(GraphicsChoice.SAFER, e.profile.graphics); assertEquals(800, e.profile.width)

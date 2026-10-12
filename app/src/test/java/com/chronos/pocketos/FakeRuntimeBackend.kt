@@ -1,16 +1,17 @@
 package com.chronos.pocketos
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
+import android.view.KeyEvent
+import android.view.View
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.InstalledShortcut
 import com.chronos.pocketos.runtime.RuntimeBackend
-import java.io.File
+import com.chronos.pocketos.runtime.RuntimeSession
+import com.chronos.pocketos.runtime.SessionEvents
 
 /**
  * Stands in for the embedded Wine/Box64 runtime in JVM tests. It records what PocketOS asks for and lets tests
- * simulate what the real runtime process does (write the session result, create shortcuts).
+ * simulate what the real runtime does (show the program, end it, create shortcuts).
  */
 class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
     var installed = false
@@ -19,7 +20,29 @@ class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
     var drives: Map<Char, String> = emptyMap()
     val appliedProfiles = mutableListOf<RuntimeProfile>()
     val shortcutList = mutableListOf<InstalledShortcut>()
-    var lastLaunch: Intent? = null
+    var lastLaunch: Launch? = null
+    val launches = mutableListOf<Launch>()
+
+    data class Launch(val containerId: Int, val unixPath: String?, val shortcutPath: String?, val session: FakeSession)
+
+    class FakeSession(private val events: SessionEvents) : RuntimeSession {
+        var stopped = false
+        var ended = false
+        val keys = mutableListOf<KeyEvent>()
+        val typed = StringBuilder()
+        var keyboardShown = 0
+        var views = 0
+
+        override fun createView(context: Context): View { views++; return View(context).apply { tag = "fake-windows-display" } }
+        override fun sendKey(event: KeyEvent): Boolean { keys += event; return true }
+        override fun typeText(text: CharSequence) { typed.append(text) }
+        override fun showSoftKeyboard() { keyboardShown++ }
+        override fun stop() { stopped = true; end(null) }
+
+        fun ready() = events.onReady()
+        fun status(text: String) = events.onStatus(text)
+        fun end(exitStatus: Int?) { if (!ended) { ended = true; events.onEnded(exitStatus) } }
+    }
 
     override fun systemFilesInstalled() = installed
     override fun installSystemFiles(progress: (Int) -> Unit): Boolean {
@@ -33,25 +56,20 @@ class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
     }
     override fun ensureDrives(containerId: Int, drives: Map<Char, String>) { this.drives = drives }
     override fun applyProfile(containerId: Int, profile: RuntimeProfile) { appliedProfiles += profile }
-    override fun launchIntent(containerId: Int, unixPath: String?, shortcutPath: String?, sessionId: String): Intent =
-        Intent().setComponent(ComponentName(context.packageName, "com.winlator.XServerDisplayActivity"))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            .putExtra("container_id", containerId)
-            .apply { if (shortcutPath != null) putExtra("shortcut_path", shortcutPath) else if (unixPath != null) putExtra("exec_path", unixPath) }
-            .putExtra("pocketos_hosted", true).putExtra("pocketos_session_id", sessionId)
-            .also { lastLaunch = it }
+    override fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents): RuntimeSession {
+        val session = FakeSession(events)
+        val launch = Launch(containerId, unixPath, shortcutPath, session)
+        lastLaunch = launch
+        launches += launch
+        return session
+    }
     override fun shortcuts(containerId: Int): List<InstalledShortcut> = shortcutList.toList()
-    override fun advancedSettingsIntent(): Intent =
-        Intent().setComponent(ComponentName(context.packageName, "com.winlator.MainActivity")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    override fun sessionResultFile() = File(context.filesDir, "pocketos_runtime/last_session.json")
     override fun installedSize() = if (installed) 1234L else 0L
 
     fun makeReady() { installed = true; container = 1 }
 
-    /** What the runtime process writes when the program PocketOS started exits. */
+    /** The program PocketOS started exits by itself. */
     fun finishSession(exitStatus: Int = 0) {
-        val id = lastLaunch?.getStringExtra("pocketos_session_id")
-        sessionResultFile().apply { parentFile!!.mkdirs() }
-            .writeText("""{"sessionId":"$id","exitStatus":$exitStatus,"endedAt":${System.currentTimeMillis()}}""")
+        lastLaunch?.session?.end(exitStatus)
     }
 }

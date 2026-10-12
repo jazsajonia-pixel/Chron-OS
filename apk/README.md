@@ -1,6 +1,24 @@
 # PocketOS test APKs
 
-## 0.2.0 — built-in Windows runtime (current)
+## 0.3.0 — programs run in a PocketOS window (current)
+
+`PocketOS-0.3.0-debug.apk` (in this folder, stored with Git LFS). Signed with the Android debug key — for personal
+testing only. Needs a **64-bit ARM** phone. Installs over 0.2.0 (same package `com.chron.os`); uninstall 0.1.0 first.
+
+### Running Windows programs
+1. PC Apps → Runtime → **Set up** (one time, ~520 MB). Then **Run self-test**.
+2. PC Apps → Library → **Add program** → pick a `.exe` or `.msi`.
+3. Tap **Install** (installers) or **Run** (programs). The program opens in a window on the PocketOS desktop.
+4. Use the Smart Cursor, touch or a mouse on it; type with a keyboard or the window's **Keyboard** button.
+   Close the window (or **Stop**) to end it. One program at a time.
+5. Then tap "It worked" or "It didn't work" (PocketOS applies the next fix automatically).
+
+### SHA-256
+```
+24dbc3da44941510430fd93d75aa5238feedc6586736e8e437f73cb9756747fd  PocketOS-0.3.0-debug.apk
+```
+
+## 0.2.0 — built-in Windows runtime (previous, full-screen runtime)
 
 The 0.2.0 APKs contain the Windows runtime (Wine + Box64) and are 170–185 MB, above GitHub's 100 MB limit for files
 in a repository. They are attached to the **v0.2.0 release** on the GitHub Releases page once it is published; you can

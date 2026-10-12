@@ -83,5 +83,6 @@ class DesktopPresentation(private val activity: ComponentActivity, display: Disp
         if (attrs.preferredDisplayModeId != target) { attrs.preferredDisplayModeId = target; w.attributes = attrs }
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean = pocket.keys.handle(event) || super.dispatchKeyEvent(event)
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        pocket.routeKeyToWindows(event) || pocket.keys.handle(event) || super.dispatchKeyEvent(event)
 }
