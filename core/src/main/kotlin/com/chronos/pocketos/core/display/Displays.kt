@@ -16,9 +16,16 @@ data class DisplayInfo(
     /** Display.FLAG_PRIVATE: owned by another app (e.g. a virtual display); cannot be used. */
     val isPrivate: Boolean,
     val isOn: Boolean,
+    /** Modes the display itself reports as supported (empty if unknown). */
+    val modes: List<DisplayModeInfo> = emptyList(),
+    val currentModeId: Int? = null,
 ) {
     val widthDp: Int get() = if (densityDpi > 0) (widthPx * 160f / densityDpi).roundToInt() else widthPx
     val heightDp: Int get() = if (densityDpi > 0) (heightPx * 160f / densityDpi).roundToInt() else heightPx
+}
+
+data class DisplayModeInfo(val id: Int, val widthPx: Int, val heightPx: Int, val refreshRate: Float) {
+    val label: String get() = "${widthPx}×${heightPx} @ ${refreshRate.toInt()} Hz"
 }
 
 sealed interface ExternalDisplayStatus {

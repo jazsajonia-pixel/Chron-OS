@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Display
 import com.chronos.pocketos.core.display.DisplayInfo
+import com.chronos.pocketos.core.display.DisplayModeInfo
 import com.chronos.pocketos.core.display.DisplaySessionReducer
 import com.chronos.pocketos.core.display.DisplaySessionState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,11 +78,15 @@ class DisplaySessionManager(private val context: Context, private val autoStart:
                 widthPx = metrics.widthPixels,
                 heightPx = metrics.heightPixels,
                 densityDpi = metrics.densityDpi,
-                refreshRate = refreshRate,
+                refreshRate = runCatching { refreshRate }.getOrDefault(0f),
                 isDefault = displayId == Display.DEFAULT_DISPLAY,
                 isPresentation = (flags and Display.FLAG_PRESENTATION) != 0,
                 isPrivate = (flags and Display.FLAG_PRIVATE) != 0,
                 isOn = state == Display.STATE_ON || state == Display.STATE_UNKNOWN,
+                modes = runCatching { supportedModes.map { m -> DisplayModeInfo(m.modeId, m.physicalWidth, m.physicalHeight, m.refreshRate) } }
+                    .getOrDefault(emptyList()),
+                // getMode() throws if the active mode is missing from the supported list; report it as unknown.
+                currentModeId = runCatching { mode.modeId }.getOrNull(),
             )
         }
     }

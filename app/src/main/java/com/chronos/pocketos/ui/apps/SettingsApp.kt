@@ -45,6 +45,7 @@ fun SettingsApp() {
 
         InputSettingsSection()
         DisplaySettingsSection()
+        PerformanceSettingsSection()
 
         SectionTitle("About")
         Text("PocketOS ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyLarge)

@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val settings by pocket.settings.settings.collectAsState()
+            val decision by pocket.capabilities.decision.collectAsState()
             val session by pocket.displays.state.collectAsState()
             LaunchedEffect(session.lastEvent) { session.lastEvent?.let { pocket.shell.showMessage(it) } }
             CompositionLocalProvider(LocalPocketOs provides pocket) {
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
                             onExit = { pocket.saveSession(); finishAndRemoveTask() },
                             statusExtras = { PhoneInputExtras() },
                             overlay = { FloatingTouchpad() },
+                            effects = decision.settings,
                         ) { w -> AppContent(w) }
                     }
                 }

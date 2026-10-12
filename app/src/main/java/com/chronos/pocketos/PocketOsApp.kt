@@ -28,6 +28,8 @@ class PocketOsApp : Application() {
     val appScope = MainScope()
     lateinit var displays: com.chronos.pocketos.display.DisplaySessionManager
         private set
+    lateinit var capabilities: com.chronos.pocketos.capability.CapabilityMonitor
+        private set
 
     /** Per-window transient state (e.g. unsaved editor text) that must survive moving between displays. */
     val windowState = mutableMapOf<Int, Any>()
@@ -45,6 +47,16 @@ class PocketOsApp : Application() {
         appScope.launch { settings.settings.collect { cursor.configure(it) } }
         displays = com.chronos.pocketos.display.DisplaySessionManager(this) { settings.settings.value.autoStartDesktopOnExternalDisplay }
         displays.startListening()
+        capabilities = com.chronos.pocketos.capability.CapabilityMonitor(
+            this, { displays.displays.value }, { settings.settings.value.profileChoice }, displays.supportsActivitiesOnSecondaryDisplays,
+        )
+        capabilities.startListening()
+        appScope.launch {
+            var lastChoice = settings.settings.value.profileChoice
+            settings.settings.collect { if (it.profileChoice != lastChoice) { lastChoice = it.profileChoice; capabilities.recheck("Profile changed") } }
+        }
+        appScope.launch { displays.displays.collect { capabilities.recheck("Displays changed") } }
+        appScope.launch { capabilities.decision.collect { shell.maxRecommendedWindows = it.settings.maxRecommendedWindows } }
         seedHome()
     }
 
@@ -61,7 +73,15 @@ class PocketOsApp : Application() {
     }
 
     /** UI scale multiplier for the external desktop (user override; Phase 4 adds profile-based defaults). */
-    fun uiScaleForExternal(s: com.chronos.pocketos.core.settings.ShellSettings): Float = s.uiScaleOverride ?: 1f
+    fun uiScaleForExternal(s: com.chronos.pocketos.core.settings.ShellSettings): Float =
+        s.uiScaleOverride ?: (capabilities.capabilities.value.externalDisplay?.let {
+            com.chronos.pocketos.core.capability.DisplayRecommendation.recommendUiScale(it)
+        } ?: 1f)
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (::capabilities.isInitialized) capabilities.recheck("Android asked apps to free memory")
+    }
 
     fun saveSession() = settings.saveSession(shell.encodeSession())
 }

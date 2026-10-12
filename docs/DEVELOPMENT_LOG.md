@@ -100,3 +100,35 @@ Limitations / not verified
   placement, are device-dependent and listed in the checklist.
 
 Next: Phase 4 — hardware-aware configuration.
+
+## Phase 4 — Device capability detection and automatic profiles (2026-10-12)
+
+Implemented
+- `:core/capability`: `Capability<T>` (Known / Unknown(reason) / Unsupported(reason)), `DeviceCapabilities`,
+  `ProfileSelector` (deterministic Auto rules: overheating ≥ SEVERE, Android Battery Saver, low-RAM flag, < 3 GB →
+  Battery Saver; unknown RAM → Balanced; ≥ 8 GB + ≥ 8 cores + 64-bit + cool → Performance; else Balanced; manual choice
+  always wins with warnings), `ProfileSettings` (shadows, animations, comfortable window count, Windows runtime resolution
+  cap, refresh cap), `DisplayRecommendation` (mode chosen only from the monitor's reported list; null if none; UI scale hint).
+- `:app/capability/CapabilityMonitor`: public APIs only (Build, ActivityManager.MemoryInfo / memoryClass / isLowRamDevice,
+  StatFs, PowerManager power-save + thermal, PackageManager Vulkan feature, GLES config). Re-checks on Battery Saver
+  broadcast, thermal listener, display changes, profile change, `onTrimMemory`, and a manual "Check again".
+- Effects applied: window shadows, launcher fade animation, soft window-count hint (never blocks), automatic monitor UI scale,
+  optional `preferredDisplayModeId` on the Presentation window (off by default).
+- Settings → Performance (profile chips, plain-language reason, warnings, effective effects, reduce motion);
+  Settings → External display (auto/override size, current vs recommended mode, opt-in switch);
+  System Info rewritten on the capability model, states "Unknown"/"Not supported" instead of guessing; privacy note.
+
+Bugs found by tests and fixed (real robustness issues)
+- `PackageManager.getSystemAvailableFeatures()` returning null crashed startup → now Unknown.
+- `PowerManager.addThermalStatusListener` throws "Listener failed to set" when the thermal service is unavailable → caught.
+- `Display.getMode()/getRefreshRate()` throw if the active mode is missing from the supported list → reported as unknown.
+
+Build/test (actual)
+- `:app:assembleDebug` SUCCESS. `:core:test` 42/42. `:app:testDebugUnitTest` 35/35 (7 new, using ShadowPowerManager,
+  ShadowActivityManager, ShadowDisplayManager.setSupportedModes).
+
+Limitations
+- "Accurate for tested devices" can only be checked on Robolectric's simulated device here; no physical phone tested.
+- Thresholds are conservative heuristics, documented in code and shown to the user.
+
+Next: Phase 5 — Windows runtime feasibility.

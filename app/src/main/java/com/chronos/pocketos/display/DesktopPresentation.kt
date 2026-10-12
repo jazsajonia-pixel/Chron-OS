@@ -46,8 +46,15 @@ class DesktopPresentation(private val activity: ComponentActivity, display: Disp
         view.setViewTreeViewModelStoreOwner(activity)
         view.setContent {
             val settings by pocket.settings.settings.collectAsState()
+            val decision by pocket.capabilities.decision.collectAsState()
             val profileScale = pocket.uiScaleForExternal(settings)
             val density = DesktopScale.densityFor(metrics.widthPixels, metrics.densityDpi, profileScale)
+            val caps by pocket.capabilities.capabilities.collectAsState()
+            androidx.compose.runtime.LaunchedEffect(settings.useRecommendedDisplayMode, decision.profile, caps.externalDisplay) {
+                applyPreferredMode(if (settings.useRecommendedDisplayMode) caps.externalDisplay?.let {
+                    com.chronos.pocketos.core.capability.DisplayRecommendation.recommendMode(it, decision.profile)?.id
+                } else null)
+            }
             CompositionLocalProvider(
                 LocalPocketOs provides pocket,
                 LocalActivityResultRegistryOwner provides activity,
@@ -60,11 +67,20 @@ class DesktopPresentation(private val activity: ComponentActivity, display: Disp
                         cursor = pocket.cursor,
                         targetId = "external",
                         targetPriority = 10,
+                        effects = decision.settings,
                     ) { w -> AppContent(w) }
                 }
             }
         }
         setContentView(view)
+    }
+
+    /** Requests a mode the display reported as supported; 0 lets the system choose. */
+    private fun applyPreferredMode(modeId: Int?) {
+        val w = window ?: return
+        val attrs = w.attributes
+        val target = modeId ?: 0
+        if (attrs.preferredDisplayModeId != target) { attrs.preferredDisplayModeId = target; w.attributes = attrs }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean = pocket.keys.handle(event) || super.dispatchKeyEvent(event)

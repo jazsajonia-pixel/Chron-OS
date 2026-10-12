@@ -30,12 +30,23 @@ class ShellController(initial: DesktopState = DesktopState()) {
     private val _ui = MutableStateFlow(ShellUi())
     val ui: StateFlow<ShellUi> = _ui.asStateFlow()
 
+    /** Soft limit from the active performance profile; exceeding it shows a hint but never blocks. */
+    var maxRecommendedWindows: Int = 8
+
     fun openApp(appId: String, argument: String? = null) {
         val spec = BuiltInApps.find(appId) ?: return
+        val before = _desktop.value.windows.size
         _desktop.update {
             WindowManager.open(it, spec.id, spec.title, spec.defaultWidth, spec.defaultHeight, argument, spec.singleInstance)
         }
-        _ui.update { it.copy(launcherOpen = false, contextMenuAt = null, switcherOpen = false) }
+        val after = _desktop.value.windows.size
+        _ui.update {
+            it.copy(
+                launcherOpen = false, contextMenuAt = null, switcherOpen = false,
+                message = if (after > before && after > maxRecommendedWindows)
+                    "$after windows are open. Closing some keeps PocketOS smooth on this profile." else it.message,
+            )
+        }
     }
 
     fun close(id: Int) = _desktop.update { WindowManager.close(it, id) }

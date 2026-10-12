@@ -35,6 +35,8 @@ data class ShellSettings(
     val uiScaleOverride: Float? = null,
     val reduceMotion: Boolean = false,
     val autoStartDesktopOnExternalDisplay: Boolean = true,
+    /** Ask the monitor for the recommended resolution (only modes it reports). Off = keep the system's choice. */
+    val useRecommendedDisplayMode: Boolean = false,
     // Onboarding
     val onboardingCompleted: Boolean = false,
 ) {

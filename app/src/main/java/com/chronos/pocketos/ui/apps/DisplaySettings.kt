@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.chronos.pocketos.LocalPocketOs
+import com.chronos.pocketos.core.capability.DisplayRecommendation
 import com.chronos.pocketos.core.display.ExternalDisplayPolicy
 import com.chronos.pocketos.core.display.ExternalDisplayStatus
 import com.chronos.pocketos.core.display.SessionPhase
@@ -40,8 +41,27 @@ fun DisplaySettingsSection() {
     SwitchRow("Start automatically", "Open the desktop on a compatible monitor as soon as it connects", s.autoStartDesktopOnExternalDisplay) { v ->
         app.settings.update { it.copy(autoStartDesktopOnExternalDisplay = v) }
     }
-    SliderRow("Desktop size on monitor", s.uiScaleOverride ?: 1f, 0.75f..1.6f, String.format("%.0f%%", (s.uiScaleOverride ?: 1f) * 100)) { v ->
+    val caps by app.capabilities.capabilities.collectAsState()
+    val decision by app.capabilities.decision.collectAsState()
+    val ext = caps.externalDisplay
+    val scale = app.uiScaleForExternal(s)
+    SliderRow("Desktop size on monitor", scale, 0.75f..1.6f, String.format("%.0f%%", scale * 100) + if (s.uiScaleOverride == null) " (auto)" else "") { v ->
         app.settings.update { it.copy(uiScaleOverride = v) }
+    }
+    if (s.uiScaleOverride != null) {
+        OutlinedButton(onClick = { app.settings.update { it.copy(uiScaleOverride = null) } }, modifier = Modifier.testTag("scale_auto")) { Text("Use automatic size") }
+    }
+    if (ext != null) {
+        Text(DisplayRecommendation.explainUiScale(ext), style = MaterialTheme.typography.bodySmall)
+        val rec = DisplayRecommendation.recommendMode(ext, decision.profile)
+        val current = ext.modes.firstOrNull { it.id == ext.currentModeId }
+        KeyValue("Current resolution", current?.label ?: "${ext.widthPx}×${ext.heightPx}")
+        KeyValue("Recommended", rec?.label ?: "The monitor did not report its modes; PocketOS keeps the system choice")
+        if (rec != null) {
+            SwitchRow("Use recommended resolution", "Only modes the monitor reports are ever requested", s.useRecommendedDisplayMode) { v ->
+                app.settings.update { it.copy(useRecommendedDisplayMode = v) }
+            }
+        }
     }
     displays.forEach { d ->
         KeyValue(

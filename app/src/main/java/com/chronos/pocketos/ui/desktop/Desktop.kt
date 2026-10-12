@@ -52,6 +52,14 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import com.chronos.pocketos.core.capability.PerformanceProfile
+import com.chronos.pocketos.core.capability.ProfileSettings
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.input.pointer.PointerType
@@ -103,6 +111,7 @@ fun Desktop(
     onExit: (() -> Unit)? = null,
     statusExtras: @Composable () -> Unit = {},
     overlay: @Composable () -> Unit = {},
+    effects: ProfileSettings = ProfileSettings.of(PerformanceProfile.BALANCED),
     appContent: @Composable (AppWindow) -> Unit,
 ) {
     val desktop by controller.desktop.collectAsState()
@@ -175,7 +184,7 @@ fun Desktop(
                     window = w,
                     focused = desktop.focusedId == w.id,
                     controller = controller,
-                    reduceMotion = settings.reduceMotion,
+                    reduceMotion = settings.reduceMotion || !effects.windowShadows,
                 ) { appContent(w) }
             }
         }
@@ -194,7 +203,11 @@ fun Desktop(
             )
         }
 
-        if (ui.launcherOpen) {
+        AnimatedVisibility(
+            visible = ui.launcherOpen,
+            enter = if (effects.animations && !settings.reduceMotion) fadeIn(tween(140)) else EnterTransition.None,
+            exit = if (effects.animations && !settings.reduceMotion) fadeOut(tween(100)) else ExitTransition.None,
+        ) {
             Launcher(
                 apps = BuiltInApps.launcherApps(),
                 compact = areaW < 600,
