@@ -2,8 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- PocketOS requests no runtime permissions. Device folders are accessed only through the
-         Storage Access Framework after the user picks them. The built-in Windows runtime (module :winruntime)
-         adds network, audio, wake-lock and foreground-service permissions for the programs it runs. -->
+         Storage Access Framework after the user picks them. Network access is for Windows programs that go online
+         (installers that download, updates); PocketOS itself sends nothing. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.type.pc" android:required="false" />
 

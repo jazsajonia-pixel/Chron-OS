@@ -2,16 +2,18 @@ package com.chronos.pocketos.runtime
 
 import android.content.Context
 import android.view.KeyEvent
-import android.view.View
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.InstalledShortcut
 
 /**
- * The part of the Windows runtime that touches the engine (Wine, Box64 and PocketOS's display server). The real
- * implementation is [EmbeddedWindowsBackend]; unit tests use a fake so they run on any machine.
+ * The part of the Windows runtime that touches the engine (Wine and the FEX emulator). The real implementation is
+ * [WineBackend]; unit tests use a fake so they run on any machine.
  */
 interface RuntimeBackend {
-    /** True when the Linux userland, Wine and Box64 are unpacked and current. */
+    /** Why the engine cannot run on this phone at all, or null. */
+    fun unsupportedReason(): String? = null
+
+    /** True when the engine is unpacked and current. */
     fun systemFilesInstalled(): Boolean
 
     /** Unpacks the system files. Blocking; call from a background thread. */
@@ -26,15 +28,18 @@ interface RuntimeBackend {
     /** Makes sure the container maps these drives (e.g. after an update moved a folder). */
     fun ensureDrives(containerId: Int, drives: Map<Char, String>)
 
-    /** Writes resolution and graphics settings into the container before a start. */
+    /** Applies a program's settings (scaling) before it starts. */
     fun applyProfile(containerId: Int, profile: RuntimeProfile)
 
     /**
      * Starts [unixPath] (a .exe, .msi, .bat or .lnk) or the shortcut at [shortcutPath] (a .desktop file an installer
-     * created), or the Windows desktop when both are null. The program is drawn by the returned session into a view
-     * that PocketOS shows in one of its own windows. Call on the main thread.
+     * created), or the Windows file manager when both are null. The program's windows appear on the PocketOS
+     * desktop. Several programs can run at once. Call on the main thread.
      */
-    fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents): RuntimeSession
+    fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents, profile: RuntimeProfile): RuntimeSession
+
+    /** Ends every Windows program and the engine. */
+    fun stopAll()
 
     /** Every program shortcut that installers created inside the container. */
     fun shortcuts(containerId: Int): List<InstalledShortcut>
@@ -51,25 +56,22 @@ interface SessionEvents {
     fun onEnded(exitStatus: Int?)
 }
 
-/** A running Windows program. Its display can be shown in any number of views over time, one at a time. */
+/** A running Windows program. */
 interface RuntimeSession {
-    /** Creates the view that shows the program and passes touch, mouse and keyboard input to it. */
-    fun createView(context: Context): View
-
     /** Sends a key to the program. Returns false if Windows has no equivalent key. */
     fun sendKey(event: KeyEvent): Boolean
 
     /** Types text into the program, e.g. from the Smart Cursor's text box. */
     fun typeText(text: CharSequence)
 
-    /** Shows the phone's on-screen keyboard for the program's view. */
+    /** Shows the phone's on-screen keyboard for the focused Windows window. */
     fun showSoftKeyboard()
 
-    /** Ends the program and everything it started. */
+    /** Ends the program. */
     fun stop()
 }
 
 /** Result of a session PocketOS started. */
 data class SessionResult(val sessionId: String?, val exitStatus: Int?, val endedAt: Long)
 
-fun Context.defaultRuntimeBackend(): RuntimeBackend = EmbeddedWindowsBackend(this)
+fun Context.defaultRuntimeBackend(): RuntimeBackend = WineBackend(this)

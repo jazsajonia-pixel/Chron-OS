@@ -3,7 +3,7 @@ package com.chronos.pocketos.core
 import com.chronos.pocketos.core.capability.PerformanceProfile
 import com.chronos.pocketos.core.library.AppStatus
 import com.chronos.pocketos.core.library.Compatibility
-import com.chronos.pocketos.core.library.GraphicsChoice
+import com.chronos.pocketos.core.library.WindowsVersion
 import com.chronos.pocketos.core.library.LibraryCodec
 import com.chronos.pocketos.core.library.LibraryEntry
 import com.chronos.pocketos.core.library.LibraryState
@@ -63,13 +63,13 @@ class LibraryTest {
         assertEquals(AppStatus.FAILED, Compatibility.assess(e, allSet).status)
         assertTrue(Compatibility.assess(e, allSet).nextSteps.first().contains("1 of 3"))
         e = Recovery.applyNext(e, 2)!!
-        assertEquals(1024, e.profile.width); assertEquals(768, e.profile.height)
-        assertTrue(e.log.last().text.contains("1280×720") && e.log.last().text.contains("1024×768"))
+        assertEquals(WindowsVersion.WIN7, e.profile.windowsVersion)
+        assertTrue(e.log.last().text.contains("Windows 10") && e.log.last().text.contains("Windows 7"))
         assertNull(e.userResult)
         e = Recovery.applyNext(Recovery.markFailed(e, 3), 4)!!
-        assertEquals(GraphicsChoice.SAFER, e.profile.graphics)
+        assertEquals(100, e.profile.scalePercent)
         e = Recovery.applyNext(Recovery.markFailed(e, 5), 6)!!
-        assertEquals(800, e.profile.width)
+        assertEquals(WindowsVersion.WINXP, e.profile.windowsVersion)
         e = Recovery.markFailed(e, 7)
         assertNull("no endless retries", Recovery.applyNext(e, 8))
         assertTrue(Compatibility.assess(e, allSet).nextSteps.first().contains("may not be compatible"))
@@ -78,10 +78,23 @@ class LibraryTest {
         assertEquals(UserResult.WORKED, good.userResult)
     }
 
-    @Test fun safeDefaultsFollowDeviceProfile() {
-        assertEquals(RuntimeProfile(1024, 768), RuntimeProfile.safeDefault(PerformanceProfile.BATTERY_SAVER))
-        assertEquals(RuntimeProfile(1280, 720), RuntimeProfile.safeDefault(PerformanceProfile.BALANCED))
-        assertEquals(RuntimeProfile(1280, 720), RuntimeProfile.safeDefault(PerformanceProfile.PERFORMANCE))
+    @Test fun safeDefaultsAndScaling() {
+        PerformanceProfile.entries.forEach { assertEquals(RuntimeProfile(), RuntimeProfile.safeDefault(it)) }
+        // Automatic scaling follows the screen density within 100%..150%; a fixed choice is exact.
+        assertEquals(144, RuntimeProfile().dpi(480))
+        assertEquals(120, RuntimeProfile().dpi(267))
+        assertEquals(96, RuntimeProfile().dpi(160))
+        assertEquals(96, RuntimeProfile(scalePercent = 100).dpi(480))
+        assertEquals(120, RuntimeProfile(scalePercent = 125).dpi(160))
+    }
+
+    @Test fun oldProfilesFromVersion03AreReadWithDefaults() {
+        val old = LibraryCodec.encode(LibraryState(entries = listOf(entry()))).replace(
+            "\"profile\":{\"scalePercent\":0,\"windowsVersion\":\"WIN10\"}",
+            "\"profile\":{\"width\":1024,\"height\":768,\"graphics\":\"SAFER\"}",
+        )
+        assertTrue(old.contains("\"graphics\""))
+        assertEquals(RuntimeProfile(), LibraryCodec.decode(old).entries.single().profile)
     }
 
     @Test fun codecRoundTripAndTolerance() {

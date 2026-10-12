@@ -24,7 +24,6 @@ object AppIds {
     const val WINDOWS_APPS = "winapps"
     const val DIAGNOSTICS = "diagnostics"
     /** The running Windows program. Opened by PocketOS when a program starts; not in the launcher. */
-    const val WINDOWS_PROGRAM = "winprogram"
 }
 
 object BuiltInApps {
@@ -36,9 +35,8 @@ object BuiltInApps {
         AppSpec(AppIds.SYSINFO, "System Info", "ⓘ", Color(0xFF8B5CF6), "Device capabilities and profile", 560, 520),
         AppSpec(AppIds.DIAGNOSTICS, "Diagnostics", "✚", Color(0xFFEF4444), "Event log, storage cleanup and compatibility reports", 640, 540),
         AppSpec(AppIds.SETTINGS, "Settings", "⚙", Color(0xFF64748B), "Appearance, input, display, privacy", 640, 520),
-        AppSpec(AppIds.WINDOWS_PROGRAM, "Windows program", "⊞", Color(0xFF2563EB), "A Windows program running inside PocketOS", 960, 600),
     )
 
-    fun launcherApps(): List<AppSpec> = all.filter { it.id != AppIds.WINDOWS_PROGRAM }
+    fun launcherApps(): List<AppSpec> = all
     fun find(id: String): AppSpec? = all.firstOrNull { it.id == id }
 }

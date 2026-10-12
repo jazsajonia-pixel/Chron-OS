@@ -45,9 +45,18 @@ open class PocketOsApp : Application() {
     /** True while the companion screen's own text box has focus (keys then stay on the phone). */
     @Volatile var companionTextFocused = false
 
-    /** Overridden by tests with a fake; the real backend drives the embedded Wine/Box64 runtime. */
+    /** Overridden by tests with a fake; the real backend drives PocketOS's Windows engine (Wine + FEX). */
     open fun createRuntimeBackend(): com.chronos.pocketos.runtime.RuntimeBackend =
-        com.chronos.pocketos.runtime.EmbeddedWindowsBackend(this)
+        com.chronos.pocketos.runtime.WineBackend(this)
+
+    /**
+     * True when the user last tapped a Windows window (so the keyboard goes to it); false once a PocketOS window,
+     * the launcher or the desktop gets focus.
+     */
+    val windowsFocused = kotlinx.coroutines.flow.MutableStateFlow(false)
+
+    /** Where Windows windows may appear (the desktop above the taskbar), in the activity window's pixels. */
+    val windowsArea = kotlinx.coroutines.flow.MutableStateFlow<android.graphics.Rect?>(null)
 
     override fun onCreate() {
         super.onCreate()
@@ -93,42 +102,40 @@ open class PocketOsApp : Application() {
     }
 
     /**
-     * A running Windows program lives in a PocketOS window: the window opens when the program starts, closing it ends
-     * the program, and when the program ends by itself the window closes and PocketOS reports what happened.
+     * Windows programs open their own windows on the desktop (see WineHost). PocketOS keeps track of which programs
+     * run, gives the keyboard to the Windows window the user tapped, and reports what happened when a program ends.
      */
     private fun connectWindowsPrograms() {
-        val programApp = com.chronos.pocketos.shell.AppIds.WINDOWS_PROGRAM
         appScope.launch {
-            var shownSession: String? = null
-            runtime.active.collect { s ->
-                if (s != null && s.sessionId != shownSession) {
-                    shownSession = s.sessionId
-                    shell.showWindowsProgram(s.title)
-                    diagnostics.add("runtime", "Started ${s.title}")
-                }
-                if (s == null) shownSession = null
+            var known = emptySet<String>()
+            runtime.sessions.collect { list ->
+                list.filter { it.sessionId !in known }.forEach { diagnostics.add("runtime", "Started ${it.title}") }
+                known = list.map { it.sessionId }.toSet()
+                if (list.isEmpty()) windowsFocused.value = false
             }
         }
-        shell.onWindowClosed = { w -> if (w.appId == programApp) runtime.stopSession() }
+        // Focusing a PocketOS window takes the keyboard back from Windows.
+        shell.onPocketFocus = { windowsFocused.value = false }
+        appScope.launch { shell.ui.collect { u -> if (u.launcherOpen || u.switcherOpen) windowsFocused.value = false } }
         runtime.onSessionEnded = { s ->
-            shell.closeApp(programApp)
             diagnostics.add("runtime", "Ended ${s.title}")
             imports.onReturnFromRuntime()?.let(shell::showMessage)
         }
         cursor.keyInterceptor = { routeKeyToWindows(it) }
     }
 
-    /** The running Windows program, if its window is the focused, visible window. */
+    /** Called by the Windows windows layer when the user taps a Windows window. */
+    fun onWindowsWindowTapped() { windowsFocused.value = true; shell.dismissContextMenu(); shell.closeLauncher() }
+
+    /** The running Windows program that should get the keyboard, if any. */
     fun focusedWindowsProgram(): com.chronos.pocketos.runtime.RuntimeSession? {
-        val s = runtime.active.value ?: return null
-        val w = shell.desktop.value.focused ?: return null
-        if (w.appId != com.chronos.pocketos.shell.AppIds.WINDOWS_PROGRAM || w.mode == com.chronos.pocketos.core.window.WindowMode.MINIMIZED) return null
+        if (!windowsFocused.value) return null
         if (shell.ui.value.launcherOpen || shell.ui.value.switcherOpen) return null
-        return s.handle
+        return runtime.sessions.value.lastOrNull()?.handle
     }
 
     /**
-     * Gives a key to the focused Windows program. PocketOS keeps the Windows/Meta key chords and Alt+Tab (to reach
+     * Gives a key to the Windows window the user last tapped. PocketOS keeps the Windows/Meta key chords and Alt+Tab (to reach
      * its own launcher and windows) and the Back key; everything else goes to the program.
      */
     fun routeKeyToWindows(event: android.view.KeyEvent): Boolean {

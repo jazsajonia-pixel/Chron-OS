@@ -39,7 +39,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.chronos.pocketos.LocalPocketOs
 import com.chronos.pocketos.core.library.AppStatus
-import com.chronos.pocketos.core.library.GraphicsChoice
+import com.chronos.pocketos.core.library.WindowsVersion
 import com.chronos.pocketos.core.library.LibraryEntry
 import com.chronos.pocketos.core.library.Recovery
 import com.chronos.pocketos.core.library.RuntimeProfile
@@ -146,18 +146,15 @@ private fun ImportWizard(state: ImportState, onShowRuntime: () -> Unit) {
                     Text("Chosen for your ${decision.profile.label} profile. PocketOS applies them each time it starts the program.", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { advanced = !advanced }, modifier = Modifier.testTag("wiz_advanced")) { Text(if (advanced) "Hide advanced settings" else "Advanced settings") }
                     if (advanced) {
-                        Text("Resolution", style = MaterialTheme.typography.labelLarge)
+                        Text("Scaling (size of text and buttons in the program)", style = MaterialTheme.typography.labelLarge)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(800 to 600, 1024 to 768, 1280 to 720, 1920 to 1080).forEach { (w, h) ->
-                                FilterChip(profile.width == w && profile.height == h, { profile = profile.copy(width = w, height = h) }, { Text("$w×$h") }, modifier = Modifier.testTag("wiz_res_$w"))
+                            RuntimeProfile.SCALES.forEach { pct ->
+                                FilterChip(profile.scalePercent == pct, { profile = profile.copy(scalePercent = pct) }, { Text(if (pct == 0) "Automatic" else "$pct%") }, modifier = Modifier.testTag("wiz_scale_$pct"))
                             }
                         }
-                        Text("Graphics", style = MaterialTheme.typography.labelLarge)
+                        Text("Windows version the program sees", style = MaterialTheme.typography.labelLarge)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            GraphicsChoice.entries.forEach { g -> FilterChip(profile.graphics == g, { profile = profile.copy(graphics = g) }, { Text(g.label) }) }
-                        }
-                        if (profile.width > decision.settings.runtimeMaxWidth) {
-                            Text("Higher than recommended for this phone; it may be slow.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            WindowsVersion.entries.forEach { v -> FilterChip(profile.windowsVersion == v, { profile = profile.copy(windowsVersion = v) }, { Text(v.label) }, modifier = Modifier.testTag("wiz_ver_${v.name}")) }
                         }
                     }
                     if (runtimeState !is RuntimeState.Ready) {

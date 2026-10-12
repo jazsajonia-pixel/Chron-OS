@@ -35,7 +35,6 @@ fun PerformanceSettingsSection() {
     KeyValue("Window shadows", if (e.windowShadows && !s.reduceMotion) "On" else "Off")
     KeyValue("Animations", if (e.animations && !s.reduceMotion) "On" else "Off")
     KeyValue("Comfortable number of windows", "Up to ${e.maxRecommendedWindows}")
-    KeyValue("Windows app resolution limit", "${e.runtimeMaxWidth}×${e.runtimeMaxHeight}")
     SwitchRow("Reduce motion and effects", "Turns off animations and shadows regardless of profile", s.reduceMotion) { v ->
         app.settings.update { it.copy(reduceMotion = v) }
     }

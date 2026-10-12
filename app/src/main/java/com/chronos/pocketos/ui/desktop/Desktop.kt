@@ -112,6 +112,10 @@ fun Desktop(
     statusExtras: @Composable () -> Unit = {},
     overlay: @Composable () -> Unit = {},
     effects: ProfileSettings = ProfileSettings.of(PerformanceProfile.BALANCED),
+    /** Receives the desktop area above the taskbar (window pixels), where Windows programs show their windows. */
+    onWindowsArea: ((android.graphics.Rect) -> Unit)? = null,
+    /** More desktop icons after the built-in apps (installed Windows programs). */
+    desktopIcons: @Composable () -> Unit = {},
     appContent: @Composable (AppWindow) -> Unit,
 ) {
     val desktop by controller.desktop.collectAsState()
@@ -154,6 +158,12 @@ fun Desktop(
             Modifier
                 .fillMaxSize()
                 .padding(bottom = TaskbarHeight)
+                .onGloballyPositioned { c ->
+                    if (onWindowsArea != null) {
+                        val p = c.positionInWindow()
+                        onWindowsArea(android.graphics.Rect(p.x.toInt(), p.y.toInt(), p.x.toInt() + c.size.width, p.y.toInt() + c.size.height))
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { controller.dismissContextMenu(); controller.closeLauncher() },
@@ -175,7 +185,7 @@ fun Desktop(
                 }
                 .testTag("wallpaper"),
         )
-        if (settings.showDesktopIcons) DesktopIcons(onOpen = { controller.openApp(it.id) })
+        if (settings.showDesktopIcons) DesktopIcons(onOpen = { controller.openApp(it.id) }, extra = desktopIcons)
 
         // Windows, back to front.
         desktop.visibleWindows.forEach { w ->
@@ -252,8 +262,14 @@ fun Desktop(
 }
 
 @Composable
-private fun DesktopIcons(onOpen: (AppSpec) -> Unit) {
-    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun DesktopIcons(onOpen: (AppSpec) -> Unit, extra: @Composable () -> Unit) {
+    // Icons fill a column top to bottom, then continue in the next column, like a PC desktop.
+    androidx.compose.foundation.layout.FlowColumn(
+        Modifier.padding(start = 12.dp, top = 12.dp, end = 12.dp, bottom = TaskbarHeight + 8.dp).fillMaxHeight(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         BuiltInApps.launcherApps().take(5).forEach { app ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -274,6 +290,7 @@ private fun DesktopIcons(onOpen: (AppSpec) -> Unit) {
                 )
             }
         }
+        extra()
     }
 }
 

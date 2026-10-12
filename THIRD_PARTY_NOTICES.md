@@ -12,12 +12,14 @@ JUnit 4 (EPL-1.0), Robolectric (MIT), AndroidX Test (Apache-2.0). Fixtures were 
 licence) and msitools/wixl (LGPL-2.1+ tools; the produced MSI is project data) and exercised with Wine (LGPL-2.1+) on the
 build host only.
 
-## Bundled Windows runtime
+## Bundled Windows engine (since 0.4.0)
+PocketOS 0.4.0 no longer contains any Winlator code, files or prebuilt archives. The engine is built from upstream
+sources by `engine/wine/build.sh`.
+
 | Component | Licence | Notes |
 |---|---|---|
-| Winlator (winlator-app, commit 3981d86) — https://github.com/brunodev85/winlator-app | LGPL-2.1 | **Bundled** as the `winruntime/` module, heavily modified (renamed to package `com.chronos.pocketos.windows`, all of its own screens removed; see `winruntime/MODIFICATIONS.md`); full source is in this repository |
-| Wine 10.10 — https://www.winehq.org | LGPL-2.1+ | Bundled inside the runtime archives (prebuilt by Winlator) |
-| Box64 0.4.4 — https://github.com/ptitSeb/box64 | MIT | Bundled inside the runtime archives |
-| Mesa (Turnip, VirGL, Zink), virglrenderer, DXVK, VKD3D-Proton, glibc, PulseAudio, FluidSynth | MIT / LGPL / zlib (per project) | Bundled inside the runtime archives / native libraries, unmodified except for the install-path retargeting |
+| Wine 11.19 — https://www.winehq.org (source: https://dl.winehq.org/wine/source/11.x/wine-11.19.tar.xz) | LGPL-2.1-or-later | Built for Android (arm64 Unix side; i386, ARM64EC and ARM64 Windows side) in `assets/engine`. Modified only by `engine/wine/patches/` (Java class name and socket name of the Android display driver). `WineHost.java` is adapted from Wine's `dlls/wineandroid.drv/WineActivity.java` and is LGPL-2.1-or-later. Source for the exact build: the Wine tarball above plus the patches in this repository. |
+| FEX 2610 (ARM64EC/WoW64 emulator DLLs `libarm64ecfex.dll`, `libwow64fex.dll`) — https://github.com/FEX-Emu/FEX | MIT | Unmodified binaries from the FEX Ubuntu PPA (`fex-emu-wine` package) |
+| FreeType 2.13.3 — https://freetype.org | FreeType License (FTL) | Font rendering for Wine, built for Android. Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved. |
 
 PocketOS uses no Microsoft code or branding. "Windows" is used only descriptively for the file format.

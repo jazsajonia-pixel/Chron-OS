@@ -6,4 +6,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "PocketOS"
-include(":core", ":winruntime", ":app")
+include(":core", ":app")

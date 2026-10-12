@@ -1,0 +1,24 @@
+diff -ru a/dlls/wineandroid.drv/device.c b/dlls/wineandroid.drv/device.c
+--- a/dlls/wineandroid.drv/device.c	2026-10-12 16:40:34.417250680 +0000
++++ b/dlls/wineandroid.drv/device.c	2026-10-12 16:40:34.429250680 +0000
+@@ -137,7 +137,7 @@
+     LONG                          ref;
+ };
+ 
+-#define IPC_SOCKET_NAME "\0\\Device\\WineAndroid"
++#define IPC_SOCKET_NAME "\0PocketOS\\WineAndroid"
+ #define IPC_SOCKET_ADDR_LEN ((socklen_t)(offsetof(struct sockaddr_un, sun_path) + sizeof(IPC_SOCKET_NAME) - 1))
+ 
+ static const struct sockaddr_un ipc_addr = {
+diff -ru a/dlls/wineandroid.drv/init.c b/dlls/wineandroid.drv/init.c
+--- a/dlls/wineandroid.drv/init.c	2026-10-12 16:40:34.417250680 +0000
++++ b/dlls/wineandroid.drv/init.c	2026-10-12 16:40:34.425250680 +0000
+@@ -42,7 +42,7 @@
+ #include "wine/debug.h"
+ 
+ #ifndef WINE_JAVA_CLASS
+-#define WINE_JAVA_CLASS "org/winehq/wine/WineActivity"
++#define WINE_JAVA_CLASS "com/chronos/pocketos/engine/WineHost"
+ #endif
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(android);

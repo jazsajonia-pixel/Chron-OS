@@ -75,6 +75,9 @@ class SmartCursor {
         refreshTarget()
     }
 
+    /** Top-left of [id]'s desktop inside its window, in px (where cursor coordinates start). */
+    fun origin(id: String): Pair<Float, Float>? = targets[id]?.let { it.originX to it.originY }
+
     fun updateBounds(id: String, originX: Float, originY: Float, w: Float, h: Float) {
         val t = targets[id] ?: return
         t.originX = originX; t.originY = originY; t.width = w; t.height = h

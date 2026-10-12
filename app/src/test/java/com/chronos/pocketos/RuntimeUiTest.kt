@@ -103,9 +103,9 @@ class RuntimeUiTest {
         ready(); openRuntimeTab()
         rule.onNodeWithTag("sample_run").performScrollTo().performClick()
         rule.waitForIdle()
-        // The sample runs in a PocketOS window, not in another screen.
+        // The sample runs on the PocketOS desktop, not in another screen.
         assertEquals(null, shadowOf(app).nextStartedActivity)
-        assertEquals("winprogram", app.shell.desktop.value.focused?.appId)
+        assertEquals(listOf("Self-test"), app.runtime.sessions.value.map { it.title })
         val exe = File(fake.lastLaunch!!.unixPath!!)
         assertEquals(File(app.runtime.programsDir, "PocketOS Sample/pocketos-sample.exe"), exe)
         val bundled = app.assets.open("sample/pocketos-sample.exe").use { it.readBytes() }
@@ -138,17 +138,22 @@ class RuntimeUiTest {
         assertEquals(SampleResult.STALE_OR_FOREIGN, app.runtime.checkSample())
     }
 
-    @Test fun windowsDesktopOpensInAPocketOsWindowAndThereAreNoRuntimeScreens() {
+    @Test fun windowsFilesOpenOnTheDesktopAndThereAreNoRuntimeScreens() {
         ready(); openRuntimeTab()
         rule.onNodeWithTag("runtime_desktop").performClick()
         rule.waitForIdle()
         assertEquals(null, shadowOf(app).nextStartedActivity)
         val launch = fake.lastLaunch!!
         assertEquals(null, launch.unixPath); assertEquals(null, launch.shortcutPath)
-        assertEquals("Windows desktop", app.shell.desktop.value.focused?.title)
-        // The runtime's own settings screens are gone.
+        assertEquals("Windows files", app.runtime.sessions.value.single().title)
+        // No PocketOS window wraps Windows programs: their windows go straight onto the desktop.
+        assertEquals(setOf("winapps"), app.shell.desktop.value.windows.values.map { it.appId }.toSet())
         assertEquals(0, rule.onAllNodesWithTag("runtime_advanced").fetchSemanticsNodes().size)
-        rule.runOnIdle { app.runtime.stopSession() }
+        rule.onNodeWithTag("runtime_stop_all").performClick()
+        rule.waitForIdle()
+        assertTrue(launch.session.stopped)
+        assertEquals(1, fake.stoppedAll)
+        assertTrue(app.runtime.sessions.value.isEmpty())
     }
 
     @Test fun logExplainerTranslatesRealWineOutput() {

@@ -34,13 +34,9 @@ import com.chronos.pocketos.core.runtime.SampleResult
 import com.chronos.pocketos.ui.components.KeyValue
 import com.chronos.pocketos.ui.components.SectionTitle
 
-/** Reports why a Windows program could not start (it opens in its own PocketOS window when it does). */
+/** Reports why a Windows program could not start (its windows open on the desktop when it does). */
 internal fun PocketOsApp.reportLaunch(result: com.chronos.pocketos.runtime.RuntimeManager.LaunchResult) {
     when (result) {
-        is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.Busy -> {
-            shell.showMessage("${result.running.title} is still running. Close its window first.")
-            shell.showWindowsProgram(result.running.title)
-        }
         is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.NotReady -> shell.showMessage(result.message)
         is com.chronos.pocketos.runtime.RuntimeManager.LaunchResult.Started -> Unit
     }
@@ -83,7 +79,8 @@ fun RuntimeSection() {
                 modifier = Modifier.testTag("runtime_install"),
             ) { Text(if (state is RuntimeState.Failed) "Try again" else "Set up (about ${rm.runtime.installedBytes / (1024 * 1024)} MB)") }
             RuntimeState.Ready -> {
-                Button(onClick = { app.reportLaunch(rm.launchDesktop(profile)) }, modifier = Modifier.testTag("runtime_desktop")) { Text("Open Windows desktop") }
+                Button(onClick = { app.reportLaunch(rm.launchDesktop(profile)) }, modifier = Modifier.testTag("runtime_desktop")) { Text("Open Windows files") }
+                OutlinedButton(onClick = { rm.stopAll(); app.shell.showMessage("Closed all Windows programs.") }, modifier = Modifier.testTag("runtime_stop_all")) { Text("Close all Windows programs") }
                 OutlinedButton(onClick = { rm.install(profile) }, modifier = Modifier.testTag("runtime_repair")) { Text("Repair") }
             }
             else -> {}
@@ -122,10 +119,25 @@ fun RuntimeSection() {
 
     SectionTitle("Using Windows programs")
     listOf(
-        "Tap a program in Library, then Run (or Install for installers). It opens in a PocketOS window on your desktop; you can move, resize, maximize and minimize it like any other window.",
-        "Tap or click inside the window to click in the program. Use the Smart Cursor or a mouse for right-click and scrolling, and \"Keyboard\" on the window's bar to type.",
-        "Closing the window (or \"Stop\") ends the program. Programs that an installer added appear in your library automatically.",
+        "Open a setup .exe from Files (or Library \u2192 Install). The installer opens on your PocketOS desktop like on a PC. When it finishes, the programs it installed appear as icons on your desktop and in your library.",
+        "One tap on a desktop icon opens the program. Its windows have their own title bar; drag it to move, use its buttons to maximize or close.",
+        "Tap inside a Windows window to click. Use the Smart Cursor or a mouse for right-click and scrolling. With a Windows window selected, a keyboard types into it; the keyboard button on the taskbar shows the phone keyboard.",
     ).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+
+    SectionTitle("Engine log")
+    var engineLog by remember { mutableStateOf<String?>(null) }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { engineLog = rm.engineLog() }, modifier = Modifier.testTag("runtime_log")) { Text(if (engineLog == null) "Show log" else "Refresh log") }
+        if (!engineLog.isNullOrEmpty()) OutlinedButton(onClick = {
+            val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("PocketOS engine log", engineLog))
+            app.shell.showMessage("Log copied.")
+        }) { Text("Copy log") }
+    }
+    engineLog?.let {
+        Text(it.ifEmpty { "The log is empty." }, style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp).testTag("runtime_log_text"))
+    }
 
     SectionTitle("Explain a runtime error")
     OutlinedTextField(log, { log = it }, label = { Text("Paste error text from a program") }, minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("log_input"))

@@ -26,9 +26,9 @@ import java.util.UUID
 
 /**
  * PocketOS's built-in Windows runtime. Programs are copied into PocketOS's private programs folder (drive D: inside
- * Windows), the PocketOS Home folder is drive E:, and programs run inside a PocketOS window: the phone never switches
- * to another screen. Wine and the program run as separate processes, so a crashing program cannot take the desktop
- * down. One Windows program (or the Windows desktop) runs at a time.
+ * Windows), the PocketOS Home folder is drive E:, and programs open their windows right on the PocketOS desktop: the
+ * phone never switches to another screen. Every program is its own process, so a crashing program cannot take the
+ * desktop down. Several programs can run at the same time, like on a PC.
  */
 class RuntimeManager(
     private val context: Context,
@@ -70,7 +70,7 @@ class RuntimeManager(
 
     data class FinishedSession(val pending: PendingSession, val result: SessionResult?)
 
-    /** The Windows program that is running now. */
+    /** A Windows program that is running now. */
     data class ActiveSession(
         val sessionId: String,
         val purpose: SessionPurpose,
@@ -83,18 +83,21 @@ class RuntimeManager(
 
     sealed interface LaunchResult {
         data class Started(val session: ActiveSession) : LaunchResult
-        data class Busy(val running: ActiveSession) : LaunchResult
         data class NotReady(val message: String) : LaunchResult
     }
 
-    private val _active = MutableStateFlow<ActiveSession?>(null)
-    val active: StateFlow<ActiveSession?> = _active.asStateFlow()
-    private var finished: FinishedSession? = null
+    private val _sessions = MutableStateFlow<List<ActiveSession>>(emptyList())
+    /** Programs that are running now, oldest first. */
+    val sessions: StateFlow<List<ActiveSession>> = _sessions.asStateFlow()
+    private val finished = ArrayDeque<FinishedSession>()
 
     /** Called on the main thread when a session ends (after its result can be read with [consumeFinishedSession]). */
     var onSessionEnded: ((ActiveSession) -> Unit)? = null
 
     init {
+        // Programs that were running when PocketOS was last closed: report them once, without an exit code.
+        loadPending().forEach { finished.addLast(FinishedSession(it, null)) }
+        prefs.edit().remove(KEY_PENDING).apply()
         val verifiedAt = prefs.getLong(KEY_VERIFIED_AT, 0L).takeIf { it > 0 }
         _sample.value = SampleStatus(
             staged = prefs.getString(KEY_NONCE, null) != null,
@@ -107,6 +110,7 @@ class RuntimeManager(
 
     fun refresh() {
         if (_state.value is RuntimeState.Installing) return
+        backend.unsupportedReason()?.let { _state.value = RuntimeState.Unsupported(it); return }
         val installed = runCatching { backend.systemFilesInstalled() }.getOrDefault(false)
         val container = installed && runCatching { backend.containerId() }.getOrNull() != null
         _state.value = RuntimeStateRules.initial(runtime, abis(), installed, container)
@@ -122,17 +126,17 @@ class RuntimeManager(
     /** Unpacks the system files and creates PocketOS's Windows environment. Safe to call again to repair. */
     fun install(defaultProfile: RuntimeProfile, onDone: (Boolean) -> Unit = {}) {
         if (state.value is RuntimeState.Unsupported || state.value is RuntimeState.Installing) return
-        _state.value = RuntimeState.Installing(0, "Unpacking Windows system files")
+        _state.value = RuntimeState.Installing(0, "Unpacking the Windows engine")
         scope.launch(Dispatchers.IO) {
             val ok = installLock.withLock {
                 runCatching {
                     if (!backend.systemFilesInstalled()) {
                         val unpacked = backend.installSystemFiles { p ->
-                            _state.value = RuntimeState.Installing((p * 0.9).toInt(), "Unpacking Windows system files")
+                            _state.value = RuntimeState.Installing((p * 0.6).toInt(), "Unpacking the Windows engine")
                         }
-                        if (!unpacked) error("Could not unpack the system files. Check that at least ${runtime.installedBytes / (1024 * 1024)} MB are free.")
+                        if (!unpacked) error("Could not unpack the Windows engine. Check that at least ${runtime.installedBytes / (1024 * 1024)} MB are free.")
                     }
-                    _state.value = RuntimeState.Installing(92, "Creating the Windows environment")
+                    _state.value = RuntimeState.Installing(62, "Creating the Windows environment (a few minutes the first time)")
                     val id = backend.containerId() ?: backend.createContainer(CONTAINER_NAME, drives(), defaultProfile)
                         ?: error("Could not create the Windows environment.")
                     backend.ensureDrives(id, drives())
@@ -147,8 +151,8 @@ class RuntimeManager(
     fun windowsPathFor(relative: String): String = RuntimePaths.windowsPath(runtime.programsDrive, relative)
 
     /**
-     * Starts a program inside PocketOS: applies [profile], records the session and starts it. The program appears in
-     * the PocketOS window that shows [active]. Call on the main thread.
+     * Starts a program: applies [profile], records the session and starts it. Its windows open on the PocketOS
+     * desktop. Call on the main thread.
      */
     fun launch(
         purpose: SessionPurpose,
@@ -159,7 +163,6 @@ class RuntimeManager(
         title: String,
         execPath: String? = null,
     ): LaunchResult {
-        _active.value?.let { return LaunchResult.Busy(it) }
         if (!isReady) return LaunchResult.NotReady("Set up the Windows runtime first (PC Apps \u2192 Runtime).")
         val id = backend.containerId() ?: return LaunchResult.NotReady("The Windows environment is missing. Repair the runtime in PC Apps \u2192 Runtime.")
         backend.ensureDrives(id, drives())
@@ -167,81 +170,100 @@ class RuntimeManager(
         val sessionId = UUID.randomUUID().toString()
         val before = if (purpose == SessionPurpose.INSTALL) backend.shortcuts(id).map { it.path }.toSet() else emptySet()
         val pending = PendingSession(sessionId, purpose, entryId, System.currentTimeMillis(), before)
-        savePending(pending)
-        finished = null
+        savePending(loadPending() + pending)
         val unix = execPath ?: relativePath?.let { File(programsDir, it).path }
         var published = false
         var endedEarly: Array<Int?>? = null
         val handle = backend.startSession(id, unix, shortcutPath, object : SessionEvents {
-            override fun onStatus(message: String) {
-                _active.value?.takeIf { it.sessionId == sessionId }?.let { _active.value = it.copy(status = message) }
-            }
-            override fun onReady() {
-                _active.value?.takeIf { it.sessionId == sessionId }?.let { _active.value = it.copy(ready = true, status = "") }
-            }
+            override fun onStatus(message: String) = update(sessionId) { it.copy(status = message) }
+            override fun onReady() = update(sessionId) { it.copy(ready = true, status = "") }
             override fun onEnded(exitStatus: Int?) {
                 if (published) sessionEnded(pending, exitStatus) else endedEarly = arrayOf(exitStatus)
             }
-        })
+        }, profile)
         val session = ActiveSession(sessionId, purpose, entryId, title, ready = false, status = "Starting\u2026", handle = handle)
-        _active.value = session
+        _sessions.value = _sessions.value + session
         published = true
         endedEarly?.let { sessionEnded(pending, it[0]) }
         return LaunchResult.Started(session)
     }
 
+    private fun update(sessionId: String, f: (ActiveSession) -> ActiveSession) {
+        _sessions.value = _sessions.value.map { if (it.sessionId == sessionId) f(it) else it }
+    }
+
     private fun sessionEnded(pending: PendingSession, exitStatus: Int?) {
-        val ended = _active.value?.takeIf { it.sessionId == pending.sessionId }
-        finished = FinishedSession(pending, SessionResult(pending.sessionId, exitStatus, System.currentTimeMillis()))
-        prefs.edit().remove(KEY_PENDING).apply()
+        val ended = _sessions.value.firstOrNull { it.sessionId == pending.sessionId }
+        finished.addLast(FinishedSession(pending, SessionResult(pending.sessionId, exitStatus, System.currentTimeMillis())))
+        savePending(loadPending().filter { it.sessionId != pending.sessionId })
         if (ended != null) {
-            _active.value = null
+            _sessions.value = _sessions.value.filter { it.sessionId != pending.sessionId }
             onSessionEnded?.invoke(ended)
         }
     }
 
-    /** Ends the running program (and everything it started). */
-    fun stopSession() {
-        _active.value?.handle?.stop()
+    /** Ends one running program. */
+    fun stopSession(sessionId: String) {
+        _sessions.value.firstOrNull { it.sessionId == sessionId }?.handle?.stop()
     }
 
-    /** Opens the Windows desktop (file manager) inside a PocketOS window. */
+    /** Ends every Windows program (and anything they started in the background). */
+    fun stopAll() {
+        _sessions.value.forEach { it.handle.stop() }
+        backend.stopAll()
+    }
+
+    /** Opens the Windows file manager. */
     fun launchDesktop(profile: RuntimeProfile): LaunchResult =
-        launch(SessionPurpose.DESKTOP, null, null, null, profile, "Windows desktop")
+        launch(SessionPurpose.DESKTOP, null, null, null, profile, "Windows files")
 
     /**
-     * Returns the session that ended since the last call, or null while a program is still running. A session that
-     * was running when PocketOS itself was closed is returned (without an exit code) the next time PocketOS starts.
+     * Returns a session that ended since the last call (oldest first), or null. A session that was running when
+     * PocketOS itself was closed is returned (without an exit code) after PocketOS starts again.
      */
-    fun consumeFinishedSession(): FinishedSession? {
-        finished?.let { finished = null; return it }
-        if (_active.value != null) return null
-        val stale = loadPending() ?: return null
-        prefs.edit().remove(KEY_PENDING).apply()
-        return FinishedSession(stale, null)
-    }
+    fun consumeFinishedSession(): FinishedSession? = finished.removeFirstOrNull()
 
-    fun pendingSession(): PendingSession? = loadPending()
+    /** Programs PocketOS started that are still running. */
+    fun pendingSessions(): List<PendingSession> = loadPending()
 
     fun shortcuts(): List<InstalledShortcut> = backend.containerId()?.let { backend.shortcuts(it) }.orEmpty()
 
     fun installedSize(): Long = backend.installedSize()
 
-    private fun savePending(p: PendingSession) {
-        val o = JSONObject().put("sessionId", p.sessionId).put("purpose", p.purpose.name).put("entryId", p.entryId)
-            .put("startedAt", p.startedAt).put("before", JSONArray(p.shortcutsBefore.toList()))
-        prefs.edit().putString(KEY_PENDING, o.toString()).apply()
+    /** The end of the engine's log files, for the user to copy into a bug report. */
+    fun engineLog(maxChars: Int = 6000): String {
+        val dir = File(context.filesDir, "engine-logs")
+        return listOf("setup.log", "desktop.log", "program.log").mapNotNull { name ->
+            File(dir, name).takeIf { it.isFile && it.length() > 0 }?.let { f ->
+                val text = runCatching { f.readText() }.getOrDefault("")
+                "== $name ==\n" + text.takeLast(maxChars / 3)
+            }
+        }.joinToString("\n")
     }
 
-    private fun loadPending(): PendingSession? = runCatching {
-        val o = JSONObject(prefs.getString(KEY_PENDING, null) ?: return null)
-        val arr = o.optJSONArray("before") ?: JSONArray()
-        PendingSession(
-            o.getString("sessionId"), SessionPurpose.valueOf(o.getString("purpose")),
-            o.optString("entryId").takeIf { it.isNotEmpty() && it != "null" }, o.optLong("startedAt"),
-            (0 until arr.length()).map { arr.getString(it) }.toSet(),
-        )
-    }.getOrNull()
+    private fun savePending(list: List<PendingSession>) {
+        val arr = JSONArray()
+        list.forEach { p ->
+            arr.put(JSONObject().put("sessionId", p.sessionId).put("purpose", p.purpose.name).put("entryId", p.entryId)
+                .put("startedAt", p.startedAt).put("before", JSONArray(p.shortcutsBefore.toList())))
+        }
+        prefs.edit().putString(KEY_PENDING, arr.toString()).apply()
+    }
+
+    private fun loadPending(): List<PendingSession> = runCatching {
+        val raw = prefs.getString(KEY_PENDING, null) ?: return emptyList()
+        // Older versions stored a single object.
+        val arr = if (raw.trimStart().startsWith("{")) JSONArray().put(JSONObject(raw)) else JSONArray(raw)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            val before = o.optJSONArray("before") ?: JSONArray()
+            PendingSession(
+                o.getString("sessionId"), SessionPurpose.valueOf(o.getString("purpose")),
+                o.optString("entryId").takeIf { it.isNotEmpty() && it != "null" }, o.optLong("startedAt"),
+                (0 until before.length()).map { before.getString(it) }.toSet(),
+            )
+        }
+    }.getOrDefault(emptyList())
 
     // ---- Self-test: a tiny bundled Windows program that writes a marker file with a fresh nonce ----
 
@@ -261,7 +283,6 @@ class RuntimeManager(
 
     /** Stages the sample and runs it inside PocketOS. */
     fun launchSample(profile: RuntimeProfile): LaunchResult {
-        _active.value?.let { return LaunchResult.Busy(it) }
         if (!isReady) return LaunchResult.NotReady("Set up the Windows runtime first.")
         stageSample()
         return launch(SessionPurpose.SAMPLE, null, sampleRel, null, profile, "Self-test")
@@ -284,10 +305,10 @@ class RuntimeManager(
     }
 
     companion object {
-        const val CONTAINER_NAME = EmbeddedWindowsBackend.CONTAINER_NAME
+        const val CONTAINER_NAME = WineBackend.CONTAINER_NAME
         private const val KEY_NONCE = "sample_nonce"
         private const val KEY_VERIFIED_AT = "sample_verified_at"
         private const val KEY_VERIFIED_VERSION = "sample_verified_version"
-        private const val KEY_PENDING = "pending_session"
+        private const val KEY_PENDING = "pending_sessions"
     }
 }

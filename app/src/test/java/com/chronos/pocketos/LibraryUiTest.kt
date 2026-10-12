@@ -13,7 +13,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.chronos.pocketos.core.library.AppStatus
-import com.chronos.pocketos.core.library.GraphicsChoice
+import com.chronos.pocketos.core.library.WindowsVersion
 import com.chronos.pocketos.core.pe.InstallerType
 import com.chronos.pocketos.library.ImportState
 import com.chronos.pocketos.library.LibraryRepository
@@ -128,24 +128,24 @@ class LibraryUiTest {
         val installer = app.library.state.value.entries.single()
         rule.onNodeWithTag("entry_start").performScrollTo().assertTextContains("Install").performClick()
         rule.waitForIdle()
-        // The installer runs inside a PocketOS window; no other screen is opened.
+        // The installer opens on the PocketOS desktop; no other screen is opened.
         assertNull(shadowOf(app).nextStartedActivity)
         val launch = app.fakeRuntime.lastLaunch!!
         assertEquals(File(app.runtime.programsDir, installer.stagedPath!!).path, launch.unixPath)
         assertEquals(installer.profile, app.fakeRuntime.appliedProfiles.last())
-        assertEquals("winprogram", app.shell.desktop.value.focused?.appId)
-        assertEquals(installer.displayName, app.shell.desktop.value.focused?.title)
+        assertEquals(installer.displayName, app.runtime.sessions.value.single().title)
 
-        // The installer creates a program shortcut and an uninstaller shortcut, then exits.
-        val root = "/data/data/com.chron.os/files/rootfs/home/xuser-1"
-        app.fakeRuntime.shortcutList += InstalledShortcut("Sample Notes", "$root/.wine/drive_c/users/xuser/Desktop/Sample Notes.desktop")
-        app.fakeRuntime.shortcutList += InstalledShortcut("Uninstall Sample Notes", "$root/.local/share/applications/wine/Programs/Sample Notes/Uninstall Sample Notes.desktop")
+        // The installer creates a Start menu shortcut and an uninstaller shortcut, then exits.
+        val root = "/data/data/com.chron.os/files/wineprefix/drive_c"
+        val programs = "$root/users/pocketos/AppData/Roaming/Microsoft/Windows/Start Menu/Programs"
+        app.fakeRuntime.shortcutList += InstalledShortcut("Sample Notes", "$programs/Sample Notes/Sample Notes.lnk")
+        app.fakeRuntime.shortcutList += InstalledShortcut("Uninstall Sample Notes", "$programs/Sample Notes/Uninstall Sample Notes.lnk")
         rule.runOnIdle { app.fakeRuntime.finishSession(0) }
         rule.waitForIdle()
-        // When the installer ends its window closes and PocketOS reports what was installed.
+        // When the installer ends PocketOS reports what was installed.
         val msg = app.shell.ui.value.message!!
         assertTrue(msg, msg.contains("Installed and added to your library: Sample Notes"))
-        assertTrue(app.shell.desktop.value.windows.values.none { it.appId == "winprogram" })
+        assertTrue(app.runtime.sessions.value.isEmpty())
         val entries = app.library.state.value.entries
         assertEquals(2, entries.size)
         val program = entries.single { it.id != installer.id }
@@ -153,11 +153,13 @@ class LibraryUiTest {
         assertEquals(AppStatus.READY, program.status)
         assertTrue(app.library.get(installer.id)!!.installerRan)
 
-        // Starting the installed program uses its shortcut.
-        val problem = rule.runOnIdle { app.imports.start(program.id) }
-        assertNull(problem)
-        assertEquals(program.shortcutPath, app.fakeRuntime.lastLaunch!!.shortcutPath)
-        rule.runOnIdle { app.runtime.stopSession() }
+        // The installed program has an icon on the PocketOS desktop; one tap opens it through its shortcut.
+        rule.runOnIdle { app.shell.desktop.value.windows.keys.toList().forEach(app.shell::close) }
+        rule.onNodeWithTag("program_icon_${program.id}").assertIsDisplayed().performClick()
+        rule.waitForIdle()
+        assertEquals(program.shortcutPath, app.fakeRuntime.lastLaunch!!.unixPath)
+        assertEquals(program.displayName, app.runtime.sessions.value.single().title)
+        rule.runOnIdle { app.runtime.stopAll() }
         // Nothing new appears when looking again.
         assertTrue(rule.runOnIdle { app.imports.findInstalledPrograms(installer.id) }.isEmpty())
     }
@@ -173,7 +175,7 @@ class LibraryUiTest {
         assertNull(app.fakeRuntime.lastLaunch)
         readyEnvironment()
         assertNull(rule.runOnIdle { app.imports.start(id) })
-        assertEquals(app.library.get(id)!!.displayName, app.runtime.active.value?.title)
+        assertEquals(app.library.get(id)!!.displayName, app.runtime.sessions.value.single().title)
         rule.runOnIdle { app.fakeRuntime.finishSession(3) }
         rule.waitForIdle()
         assertTrue(app.shell.ui.value.message!!.contains("Did it work?"))
@@ -229,16 +231,16 @@ class LibraryUiTest {
         rule.onNodeWithText("Next fix (1 of 3)", substring = true, useUnmergedTree = true).assertExists()
         rule.onNodeWithTag("entry_next_fix").performScrollTo().performClick()
         var e = app.library.get(id)!!
-        assertEquals(1024 to 768, e.profile.width to e.profile.height)
+        assertEquals(WindowsVersion.WIN7, e.profile.windowsVersion)
         assertEquals(AppStatus.READY, e.status)
         assertTrue(e.log.any { it.text.startsWith("Recovery 1/3") })
         // The fix is applied automatically on the next start.
         rule.runOnIdle { app.imports.start(id) }
-        assertEquals(1024, app.fakeRuntime.appliedProfiles.last().width)
-        rule.runOnIdle { app.runtime.stopSession() } // its window would cover the library
+        assertEquals(WindowsVersion.WIN7, app.fakeRuntime.appliedProfiles.last().windowsVersion)
+        rule.runOnIdle { app.runtime.stopAll() }
         repeat(2) { rule.runOnIdle { app.imports.reportFailed(id); app.imports.applyNextRecovery(id) } }
         e = app.library.get(id)!!
-        assertEquals(GraphicsChoice.SAFER, e.profile.graphics); assertEquals(800, e.profile.width)
+        assertEquals(WindowsVersion.WINXP, e.profile.windowsVersion); assertEquals(100, e.profile.scalePercent)
         rule.runOnIdle { app.imports.reportFailed(id) }
         assertFalse("no more automatic suggestions", rule.runOnIdle { app.imports.applyNextRecovery(id) })
         assertEquals(0, rule.onAllNodesWithTag("entry_next_fix").fetchSemanticsNodes().size)

@@ -209,8 +209,8 @@ class ImportManager(
     // ---- Starting programs inside the built-in runtime ----
 
     /**
-     * Starts the entry inside PocketOS: the program opens in a PocketOS window. Returns a message for the user when
-     * it cannot start (or another program is still running), otherwise null.
+     * Starts the entry: its windows open on the PocketOS desktop. Returns a message for the user when it cannot
+     * start, otherwise null.
      */
     fun start(id: String): String? {
         val e = library.get(id) ?: return "This entry no longer exists."
@@ -224,7 +224,6 @@ class ImportManager(
             return "PocketOS's copy of ${e.sourceFileName} is missing. Import the file again."
         }
         when (val r = runtime.launch(purpose, e.id, e.stagedPath, desktop, e.profile, e.displayName, execPath = lnk)) {
-            is RuntimeManager.LaunchResult.Busy -> return "${r.running.title} is still running. Close its window first."
             is RuntimeManager.LaunchResult.NotReady -> return r.message
             is RuntimeManager.LaunchResult.Started -> Unit
         }
@@ -241,14 +240,22 @@ class ImportManager(
      * result; after an installer, adds the programs it installed to the library. Returns a message for the user.
      */
     fun onReturnFromRuntime(): String? {
-        val finished = runtime.consumeFinishedSession()
-        if (finished == null) {
+        val messages = mutableListOf<String>()
+        while (true) {
+            val finished = runtime.consumeFinishedSession() ?: break
+            finishedMessage(finished)?.let(messages::add)
+        }
+        if (messages.isEmpty()) {
             // The sample writes its marker immediately, so it can be verified even if the session is still open.
-            if (runtime.pendingSession()?.purpose == SessionPurpose.SAMPLE && runtime.checkSample() == SampleResult.VERIFIED) {
+            if (runtime.pendingSessions().any { it.purpose == SessionPurpose.SAMPLE } && runtime.checkSample() == SampleResult.VERIFIED) {
                 return "Self-test passed: the sample Windows program ran on this phone."
             }
             return null
         }
+        return messages.joinToString(" ")
+    }
+
+    private fun finishedMessage(finished: RuntimeManager.FinishedSession): String? {
         val p = finished.pending
         val code = finished.result?.exitStatus
         val now = clock()

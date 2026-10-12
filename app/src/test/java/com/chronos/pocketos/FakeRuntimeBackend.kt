@@ -2,7 +2,6 @@ package com.chronos.pocketos
 
 import android.content.Context
 import android.view.KeyEvent
-import android.view.View
 import com.chronos.pocketos.core.library.RuntimeProfile
 import com.chronos.pocketos.core.runtime.InstalledShortcut
 import com.chronos.pocketos.runtime.RuntimeBackend
@@ -10,7 +9,7 @@ import com.chronos.pocketos.runtime.RuntimeSession
 import com.chronos.pocketos.runtime.SessionEvents
 
 /**
- * Stands in for the embedded Wine/Box64 runtime in JVM tests. It records what PocketOS asks for and lets tests
+ * Stands in for PocketOS's Windows engine (Wine + FEX) in JVM tests. It records what PocketOS asks for and lets tests
  * simulate what the real runtime does (show the program, end it, create shortcuts).
  */
 class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
@@ -31,9 +30,7 @@ class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
         val keys = mutableListOf<KeyEvent>()
         val typed = StringBuilder()
         var keyboardShown = 0
-        var views = 0
 
-        override fun createView(context: Context): View { views++; return View(context).apply { tag = "fake-windows-display" } }
         override fun sendKey(event: KeyEvent): Boolean { keys += event; return true }
         override fun typeText(text: CharSequence) { typed.append(text) }
         override fun showSoftKeyboard() { keyboardShown++ }
@@ -56,7 +53,9 @@ class FakeRuntimeBackend(private val context: Context) : RuntimeBackend {
     }
     override fun ensureDrives(containerId: Int, drives: Map<Char, String>) { this.drives = drives }
     override fun applyProfile(containerId: Int, profile: RuntimeProfile) { appliedProfiles += profile }
-    override fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents): RuntimeSession {
+    var stoppedAll = 0
+    override fun stopAll() { stoppedAll++ }
+    override fun startSession(containerId: Int, unixPath: String?, shortcutPath: String?, events: SessionEvents, profile: RuntimeProfile): RuntimeSession {
         val session = FakeSession(events)
         val launch = Launch(containerId, unixPath, shortcutPath, session)
         lastLaunch = launch

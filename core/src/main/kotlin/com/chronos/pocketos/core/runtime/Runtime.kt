@@ -1,10 +1,10 @@
 package com.chronos.pocketos.core.runtime
 
 /**
- * PocketOS includes its own Windows runtime: Wine and Box64 running inside the app (the open-source Winlator
- * runtime, LGPL-2.1, embedded as the :winruntime module). No separate app is needed. PocketOS still never reports
- * success it cannot observe: a program "works" only when the user says so, and the self-test proves execution
- * with a marker file. See docs/PHASE6_EMBEDDED_RUNTIME.md.
+ * PocketOS includes its own Windows engine: Wine built for Android (no Linux system image, no X server) with the
+ * FEX emulator for x86 and x64 code. Windows programs run as processes of the app and draw their windows directly on
+ * the PocketOS desktop. PocketOS still never reports success it cannot observe: a program "works" only when the user
+ * says so, and the self-test proves execution with a marker file. See docs/WINDOWS_ENGINE.md.
  */
 data class RuntimeInfo(
     val id: String,
@@ -25,13 +25,13 @@ object RuntimeCatalog {
     val BUILTIN = RuntimeInfo(
         id = "builtin",
         name = "PocketOS Windows runtime",
-        engine = "Wine 10.10 + Box64 0.4.4",
-        license = "LGPL-2.1 (based on Winlator)",
-        homepage = "https://github.com/brunodev85/winlator-app",
+        engine = "Wine 11.19 + FEX 2610",
+        license = "Wine: LGPL-2.1-or-later; FEX: MIT",
+        homepage = "https://www.winehq.org",
         requiredAbi = "arm64-v8a",
         programsDrive = 'D',
         homeDrive = 'E',
-        installedBytes = 520L * 1024 * 1024,
+        installedBytes = 900L * 1024 * 1024,
     )
     val all = listOf(BUILTIN)
 }
@@ -40,7 +40,7 @@ object RuntimeCatalog {
 sealed interface RuntimeState {
     /** The phone cannot run the runtime at all (it needs a 64-bit ARM processor). */
     data class Unsupported(val reason: String) : RuntimeState
-    /** The system files (Linux userland, Wine, Box64) have not been unpacked yet. */
+    /** The Windows engine has not been unpacked yet. */
     data object NotInstalled : RuntimeState
     data class Installing(val percent: Int, val stage: String) : RuntimeState
     data object Ready : RuntimeState

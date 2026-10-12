@@ -62,6 +62,8 @@ class MainActivity : ComponentActivity() {
                             statusExtras = { PhoneInputExtras() },
                             overlay = { FloatingTouchpad() },
                             effects = decision.settings,
+                            onWindowsArea = { pocket.windowsArea.value = it },
+                            desktopIcons = { com.chronos.pocketos.ui.desktop.ProgramDesktopIcons() },
                         ) { w -> AppContent(w) }
                         if (!settings.onboardingCompleted) {
                             com.chronos.pocketos.ui.OnboardingTour { pocket.settings.update { it.copy(onboardingCompleted = true) } }
@@ -70,6 +72,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // Windows programs draw their windows on a layer above the desktop (PocketOS's own Windows engine).
+        com.chronos.pocketos.engine.WindowsLayer.attach(this)
     }
 
     /** Shows or dismisses the external desktop. Failures fall back to the phone desktop with an explanation. */

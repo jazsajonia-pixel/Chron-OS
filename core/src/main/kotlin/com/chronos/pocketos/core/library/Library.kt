@@ -1,7 +1,6 @@
 package com.chronos.pocketos.core.library
 
 import com.chronos.pocketos.core.capability.PerformanceProfile
-import com.chronos.pocketos.core.capability.ProfileSettings
 import com.chronos.pocketos.core.pe.FileKind
 import com.chronos.pocketos.core.pe.InstallerType
 import com.chronos.pocketos.core.pe.Machine
@@ -14,24 +13,30 @@ enum class AppStatus(val label: String) { READY("Ready"), NEEDS_SETUP("Needs Set
 /** What the user reported after trying the program. PocketOS can see that it started and exited, not whether it worked. */
 enum class UserResult { WORKED, DID_NOT_WORK }
 
-enum class GraphicsChoice(val label: String) { RUNTIME_DEFAULT("Automatic graphics"), SAFER("Compatibility graphics (VirGL + WineD3D)") }
+/** Windows version the engine reports to a program. Some older programs refuse to start on "Windows 10". */
+enum class WindowsVersion(val label: String, val wineName: String?) {
+    WIN10("Windows 10", null), WIN7("Windows 7", "win7"), WINXP("Windows XP", "winxp"),
+}
 
-/** Settings PocketOS applies to the built-in runtime every time it starts this program. */
+/** Settings PocketOS applies to the Windows engine every time it starts this program. */
 @Serializable
 data class RuntimeProfile(
-    val width: Int = 1280,
-    val height: Int = 720,
-    val graphics: GraphicsChoice = GraphicsChoice.RUNTIME_DEFAULT,
+    /** Windows display scaling in percent (100 = 96 DPI); 0 picks a size that suits the phone's screen. */
+    val scalePercent: Int = 0,
+    val windowsVersion: WindowsVersion = WindowsVersion.WIN10,
 ) {
-    val label: String get() = "${width}×${height}, ${graphics.label}"
+    val label: String get() = (if (scalePercent == 0) "Automatic scaling" else "$scalePercent% scaling") + ", ${windowsVersion.label}"
+
+    /** Windows DPI for a screen with Android's [densityDpi]. */
+    fun dpi(densityDpi: Int): Int =
+        if (scalePercent > 0) (96 * scalePercent / 100).coerceIn(72, 288) else (densityDpi * 0.45f).toInt().coerceIn(96, 144)
 
     companion object {
-        /** Safe default derived from the device profile (Phase 4). */
-        fun safeDefault(p: PerformanceProfile): RuntimeProfile {
-            val s = ProfileSettings.of(p)
-            val (w, h) = if (s.runtimeMaxWidth >= 1280) 1280 to 720 else s.runtimeMaxWidth to s.runtimeMaxHeight
-            return RuntimeProfile(w, h, GraphicsChoice.RUNTIME_DEFAULT)
-        }
+        val SCALES = listOf(0, 100, 125, 150)
+
+        /** Safe default for every device profile: Windows windows size themselves like on a PC. */
+        @Suppress("UNUSED_PARAMETER")
+        fun safeDefault(p: PerformanceProfile): RuntimeProfile = RuntimeProfile()
     }
 }
 
@@ -141,13 +146,10 @@ object Compatibility {
 object Recovery {
     data class Step(val description: String, val apply: (RuntimeProfile) -> RuntimeProfile)
 
-    /** Sets exactly [w]×[h] if that has fewer pixels than the current setting; otherwise keeps it. */
-    private fun lowerTo(w: Int, h: Int): (RuntimeProfile) -> RuntimeProfile = { p -> if (w.toLong() * h < p.width.toLong() * p.height) p.copy(width = w, height = h) else p }
-
     val steps: List<Step> = listOf(
-        Step("Lower the resolution to 1024×768", lowerTo(1024, 768)),
-        Step("Switch to the compatibility graphics driver") { it.copy(graphics = GraphicsChoice.SAFER) },
-        Step("Lower the resolution to 800×600", lowerTo(800, 600)),
+        Step("Tell the program it runs on Windows 7") { it.copy(windowsVersion = WindowsVersion.WIN7) },
+        Step("Use 100% scaling (more room on screen, smaller text)") { it.copy(scalePercent = 100) },
+        Step("Tell the program it runs on Windows XP") { it.copy(windowsVersion = WindowsVersion.WINXP) },
     )
     val MAX_STEPS get() = steps.size
 

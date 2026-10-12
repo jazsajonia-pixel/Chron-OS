@@ -7,7 +7,7 @@ when the phone supports it.
 > PocketOS is **not a standalone or bootable operating system**. It runs inside Android like any other app. Your phone,
 > its apps and its data keep working normally.
 
-Status: version 0.2.0, development build. Verified with automated tests and ARM64 emulation of the Windows runtime — see [Testing status](#testing-status).
+Status: version 0.4.0, development build. PocketOS now has its own Windows engine (Wine for Android + FEX, no Winlator) — see [docs/WINDOWS_ENGINE.md](docs/WINDOWS_ENGINE.md) and [Testing status](#testing-status).
 
 ## Features
 
@@ -19,7 +19,7 @@ Status: version 0.2.0, development build. Verified with automated tests and ARM6
 | Mouse & keyboard | USB/Bluetooth mouse and keyboard, shortcuts (Ctrl+Esc, Alt+Tab, Ctrl+Alt+Arrows, Alt+F4, …) | Some phones intercept shortcuts such as Alt+Tab |
 | External monitor | Desktop on a monitor via Android's Presentation API; phone becomes touchpad/keyboard; desktop size control; safe fallback on unplug | **Many phones have no video output** or only mirror the screen. Settings → Display shows what your phone reports |
 | Hardware-aware setup | Reads CPU ABIs, memory, GPU API levels, thermal and battery state; picks Battery saver / Balanced / Performance automatically (overridable) | Unknown values are shown as "Unknown", never guessed |
-| PC Apps (.exe/.msi) | **Built-in Windows runtime** (Wine 10.10 + Box64 0.4.4): checks files first, then **runs programs and installers in a PocketOS window** on the desktop (no other screen opens); programs an installer creates appear in the library automatically; one-tap self-test; settings and up to 3 fixes applied automatically; known-good settings remembered | 64-bit ARM phones only. Needs about 520 MB once set up. **Not every Windows program works**, and results differ between phones |
+| PC Apps (.exe/.msi) | **Own Windows engine** (Wine 11.19 for Android + FEX 2610): checks files first, then runs installers and programs **as real windows on the PocketOS desktop**. Installed programs get a desktop icon; one tap opens them. Several programs can run at once. |
 | Diagnostics | Sanitized event log, crash notice and safe start, storage cleanup, compatibility report with preview before sharing | Nothing is uploaded automatically |
 
 ## Install
@@ -56,7 +56,7 @@ The release build is signed with the **debug key** so it can be installed for te
 - External monitor: connect a monitor through a USB-C video adapter/dock or supported wireless display. If the phone
   offers the monitor to apps, the desktop moves there and the phone shows a touchpad and keyboard. Settings → Display
   explains what was detected.
-- PC programs: first, PC Apps → Runtime → "Set up" (one time, unpacks the built-in Windows runtime; no download).
+- PC programs: first, PC Apps → Runtime → "Set up" (one time, unpacks the Windows engine and creates the Windows environment; no download).
   Then PC Apps → Library → "Add program", pick a `.exe` or `.msi`. PocketOS checks the file, explains what it found and
   keeps a copy. Tap **Install** for installers (the programs they install are added to the library) or **Run** for
   programs. The program opens in a normal PocketOS window on your desktop — move, resize or minimise it like any other
@@ -83,7 +83,7 @@ The release build is signed with the **debug key** so it can be installed for te
 - Smart Cursor and shortcuts work inside PocketOS only (no input injection into other apps, by design).
 - The built-in Windows runtime requires a 64-bit ARM phone. Compatibility of any given program is not guaranteed;
   games and programs that need special drivers, anti-cheat or kernel components will not work.
-- The app targets Android API 28 because the runtime starts its own Linux programs from app storage. Some Android
+- The app targets Android API 28 because the engine starts its own programs (Wine) from app storage. Some Android
   versions show an "older Android version" notice when installing; it cannot be published on Google Play this way.
 - The application id is `com.chron.os` (was `com.chronos.pocketos`); uninstall 0.1.0 first — see
   [docs/PHASE6_EMBEDDED_RUNTIME.md](docs/PHASE6_EMBEDDED_RUNTIME.md) for why it must not change.
@@ -94,15 +94,14 @@ The release build is signed with the **debug key** so it can be installed for te
 
 All results come from a Linux build machine without a phone, emulator (no KVM) or monitor:
 
-- `:core:test` — 70 JVM unit tests (window manager, input gestures, display policy, capabilities, runtime rules,
+- `:core:test` — 71 JVM unit tests (window manager, input gestures, display policy, capabilities, runtime rules,
   PE inspector incl. 300-case corruption fuzzing, library, diagnostics).
-- `:app:testDebugUnitTest` — 66 Robolectric UI tests (+1 opt-in runtime integration test) (shell, phone portrait, input, external display via shadow displays,
-  capabilities, built-in runtime, install/run flow, library/wizard, quality/diagnostics, onboarding).
-- The bundled runtime itself (retargeted to `/data/data/com.chron.os`) was run under **ARM64 emulation (qemu-user)**:
-  Box64 + Wine 10.10 ran the self-test program, an NSIS installer, the program it installed, and an MSI package.
-  `EmbeddedRuntimeIntegrationTest` runs PocketOS's real runtime code against the real runtime files. Details:
-  [docs/PHASE6_EMBEDDED_RUNTIME.md](docs/PHASE6_EMBEDDED_RUNTIME.md). The Android graphics/X server path still needs
-  a real phone.
+- `:app:testDebugUnitTest` — 70 Robolectric UI tests (shell, phone portrait, input, external display via shadow displays,
+  capabilities, Windows engine flow with a stand-in engine, install/run flow, desktop icons for installed programs,
+  Windows windows on the desktop (`WineHostTest`, `WindowsDesktopTest`), library/wizard, quality, onboarding).
+- The Windows engine (Wine 11.19 for Android + FEX 2610) was **built** from upstream sources (`engine/wine/build.sh`)
+  and packed into the APK. It has **not yet been run on a phone**: the build PC cannot run Android programs. See
+  [docs/WINDOWS_ENGINE.md](docs/WINDOWS_ENGINE.md).
 - `lintDebug`: 0 errors.
 
 Manual test steps for real hardware: [docs/HARDWARE_TEST_CHECKLIST.md](docs/HARDWARE_TEST_CHECKLIST.md).
@@ -118,7 +117,7 @@ Manual test steps for real hardware: [docs/HARDWARE_TEST_CHECKLIST.md](docs/HARD
 | Alt+Tab does nothing | The phone intercepts it; use Ctrl+Alt+Right/Left |
 | PC Apps says "Needs setup" | PC Apps → Runtime → "Set up". On non-ARM64 phones Windows programs cannot run |
 | A program does not start or looks wrong | Press "It didn't work", then "Try the next fix" (up to 3, applied automatically). Runtime menu → Logs, paste into "Explain a runtime error" |
-| An installer finished but nothing appeared | Open the installer entry → "Find installed programs", or PC Apps → Runtime → "Open Windows desktop" |
+| An installer finished but nothing appeared | Open the installer entry → "Find installed programs", or PC Apps → Runtime → "Open Windows files" |
 | Runtime setup failed | Free at least 600 MB, then "Try again". "Repair" re-checks an existing setup |
 | PocketOS crashed | Reopen it. After two quick crashes it starts with an empty desktop (safe start). Diagnostics shows the crash notice |
 | Storage is full | Diagnostics → Storage → "Clear temporary files" / "Remove leftover folders" |
@@ -128,9 +127,8 @@ Manual test steps for real hardware: [docs/HARDWARE_TEST_CHECKLIST.md](docs/HARD
 ```
 core/   Pure Kotlin/JVM logic (window manager, input, display policy, capabilities, runtime rules, PE inspector, library, diagnostics)
 app/    Android app (Jetpack Compose UI, Android integrations)
-winruntime/  Built-in Windows runtime (derived from Winlator, LGPL-2.1): display server, Wine/Box64 launcher, runtime files
+engine/wine/  Build script and patches for the Windows engine (upstream Wine + FEX)
 docs/   Audit, development log, runtime feasibility, hardware test checklist
 tools/pe-fixtures/  Sources and build script for the Windows test fixtures
-tools/runtime/  Scripts used to adapt the runtime (path retargeting, library conversion)
 ```
 Product documents: PRODUCT_VISION.md, DEVELOPMENT_PHASES.md, AI_AGENT_RULES.md. Licences: THIRD_PARTY_NOTICES.md.

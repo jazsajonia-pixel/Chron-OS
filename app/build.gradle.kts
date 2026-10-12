@@ -11,15 +11,14 @@ android {
     namespace = "com.chronos.pocketos"
     compileSdk = 35
     defaultConfig {
-        // "com.chron.os" has the same length as "com.winlator", so the embedded runtime's prebuilt Linux files
-        // (which contain the absolute path /data/data/<package>/files) are retargeted byte-for-byte. Do not change.
         applicationId = "com.chron.os"
-        minSdk = 26
-        // The embedded Windows runtime starts Box64/Wine binaries from the app's private storage. Android only
-        // allows that for apps targeting API 28 or lower (same as Winlator). PocketOS is distributed as an APK.
+        // The Windows engine (Wine) is built against Android 9 (API 28).
+        minSdk = 28
+        // PocketOS starts its Windows engine (Wine) from the app's private storage. Android only allows that for
+        // apps targeting API 28 or lower. PocketOS is distributed as an APK.
         targetSdk = 28
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         ndk { abiFilters += "arm64-v8a" }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -42,32 +41,19 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
-            // ./gradlew :app:testDebugUnitTest -Ppocketos.runtimeIntegration=true unpacks the real runtime (slow, ~1 GB).
-            all {
-                it.systemProperty("pocketos.runtimeIntegration", project.findProperty("pocketos.runtimeIntegration") ?: "false")
-                // ./gradlew :app:testDebugUnitTest -Ppocketos.displayPipeline=true runs a real Windows program under
-                // qemu against PocketOS's display server (needs tools/runtime/host-display-test/build.sh first).
-                val pipeline = project.findProperty("pocketos.displayPipeline")?.toString() ?: "false"
-                it.systemProperty("pocketos.displayPipeline", pipeline)
-                if (pipeline == "true") {
-                    it.systemProperty("java.library.path", rootProject.file("tools/runtime/host-display-test/out").absolutePath)
-                    System.getenv("POCKETOS_TEST_LD_PRELOAD")?.let { lib -> it.environment("LD_PRELOAD", lib); it.environment("ASAN_OPTIONS", "detect_leaks=0:handle_segv=0:allow_user_segv_handler=1") }
-                    it.systemProperty("pocketos.clickTestExe", rootProject.file("tools/runtime/host-display-test/out/click_test.exe").absolutePath)
-                }
-            }
         }
     }
     packaging {
         resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-        // The runtime executes some bundled native programs (e.g. PulseAudio) from the extracted library folder.
         jniLibs { useLegacyPackaging = true }
     }
+    // The Windows engine ships as zip parts in assets/engine; they are already compressed.
+    androidResources { noCompress += "zip" }
     lint { disable += setOf("ExpiredTargetSdkVersion", "OldTargetApi") }
 }
 
 dependencies {
     implementation(project(":core"))
-    implementation(project(":winruntime"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.documentfile)
