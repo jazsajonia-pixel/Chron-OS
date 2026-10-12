@@ -18,3 +18,12 @@ ls -l "$out"
 x86_64-w64-mingw32-dlltool -d m.def -l libm_missing.a
 x86_64-w64-mingw32-gcc -O2 -s -o "$out/needs_missing_dll_x64.exe" missing.c libm_missing.a
 rm -f libm_missing.a
+# Real installer fixtures (need nsis and wixl).
+cp "$out/hello_console_x64.exe" .
+makensis -V2 sample_installer.nsi && mv sample_setup_nsis.exe "$out/"
+wixl -a x64 -o "$out/sample_setup.msi" sample_installer.wxs
+rm -f hello_console_x64.exe
+# Non-Windows inputs.
+printf 'echo hello\r\n' > "$out/script.bat"
+printf 'PK\003\004not-really-a-zip' > "$out/archive.zip"
+printf '\177ELF\002\001\001' > "$out/linux.bin"

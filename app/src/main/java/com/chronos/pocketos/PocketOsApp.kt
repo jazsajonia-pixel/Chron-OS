@@ -32,6 +32,10 @@ class PocketOsApp : Application() {
         private set
     lateinit var runtime: com.chronos.pocketos.runtime.RuntimeManager
         private set
+    lateinit var library: com.chronos.pocketos.library.LibraryRepository
+        private set
+    lateinit var imports: com.chronos.pocketos.library.ImportManager
+        private set
 
     /** Per-window transient state (e.g. unsaved editor text) that must survive moving between displays. */
     val windowState = mutableMapOf<Int, Any>()
@@ -54,6 +58,17 @@ class PocketOsApp : Application() {
         )
         capabilities.startListening()
         runtime = com.chronos.pocketos.runtime.RuntimeManager(this) { capabilities.capabilities.value.abis }
+        library = com.chronos.pocketos.library.LibraryRepository(File(filesDir, "library.json"))
+        imports = com.chronos.pocketos.library.ImportManager(this, library, runtime, appScope, {
+            com.chronos.pocketos.core.library.RuntimeProfile.safeDefault(capabilities.decision.value.profile)
+        })
+        imports.cleanupTemp() // crash recovery: remove half-finished imports
+        appScope.launch { runtime.availability.collect { imports.refreshAll() } }
+        appScope.launch { runtime.store.collect { imports.refreshAll() } }
+        com.chronos.pocketos.ui.apps.FileOpenHooks.onWindowsExecutable = { _, uri, name ->
+            imports.begin(uri, name)
+            shell.openApp(com.chronos.pocketos.shell.AppIds.WINDOWS_APPS)
+        }
         appScope.launch {
             var lastChoice = settings.settings.value.profileChoice
             settings.settings.collect { if (it.profileChoice != lastChoice) { lastChoice = it.profileChoice; capabilities.recheck("Profile changed") } }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PocketOS test fixture: minimal real MSI built with wixl (public domain). -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="Sample Notes" Language="1033" Version="1.2.3" Manufacturer="PocketOS Test Fixtures"
+           UpgradeCode="6c1f3b4e-2a8d-4a64-9d5b-0c4f3a7e9b11">
+    <Package InstallerVersion="200" Compressed="yes" Comments="PocketOS test fixture"/>
+    <Media Id="1" Cabinet="sample.cab" EmbedCab="yes"/>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="Sample Notes">
+          <Component Id="MainExe" Guid="3f0a2b1c-4d5e-4f60-8a71-92b3c4d5e6f7" Win64="yes">
+            <File Id="HelloExe" Source="hello_console_x64.exe" KeyPath="yes"/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+    <Feature Id="Main" Level="1"><ComponentRef Id="MainExe"/></Feature>
+  </Product>
+</Wix>

@@ -63,7 +63,11 @@ class RuntimeUiTest {
         rule.runOnIdle { app.runtime.refresh() }
     }
 
-    private fun openPcApps() { rule.runOnIdle { app.shell.openApp("winapps") }; rule.waitForIdle() }
+    private fun openPcApps() {
+        rule.runOnIdle { app.shell.openApp("winapps") }
+        rule.onNodeWithTag("tab_runtime").performClick()
+        rule.waitForIdle()
+    }
 
     private fun useTempWorkspace(docId: String = "primary:Download/PocketOS"): File {
         val dir = tmp.newFolder("PocketOS")

@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -20,13 +20,14 @@ import com.chronos.pocketos.core.window.AppWindow
 
 @Composable
 fun PcAppsApp(window: AppWindow) {
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by rememberSaveable(window.id) { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         TabRow(selectedTabIndex = tab) {
-            Tab(tab == 0, { tab = 0 }, text = { Text("Runtime") }, modifier = Modifier.testTag("tab_runtime"))
+            Tab(tab == 0, { tab = 0 }, text = { Text("Library") }, modifier = Modifier.testTag("tab_library"))
+            Tab(tab == 1, { tab = 1 }, text = { Text("Runtime") }, modifier = Modifier.testTag("tab_runtime"))
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp).testTag("pcapps_root")) {
-            RuntimeSection()
+            if (tab == 0) LibrarySection(onShowRuntime = { tab = 1 }) else RuntimeSection()
         }
     }
 }

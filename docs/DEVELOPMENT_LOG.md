@@ -152,3 +152,34 @@ Blocker
 - No ARM64 Android device or emulator: execution through Winlator on Android is **not verified**. Documented with a manual procedure.
 
 Next: Phase 6 — installer wizard and app library.
+
+## Phase 6 — Installer wizard and app library (2026-10-12)
+
+Implemented
+- `:core/pe/PeInspector`: bounds-checked, read-only parser: MZ/PE/NE/DOS, machine, subsystem, PE32/PE32+, DLL flag,
+  .NET (CLR dir), Authenticode presence (not verified), overlay size, VS_VERSIONINFO strings, installer hints (NSIS, Inno,
+  InstallShield, WiX Burn, MSI compound file, self-extracting), ZIP/ELF/script rejection, SHA-256. Never throws on bad input.
+- `:core/library`: `LibraryEntry`/`LibraryState` (JSON, tolerant), `Compatibility` (honest Ready / Needs Setup / Unsupported /
+  Failed — Ready = everything PocketOS controls is in place, explicitly "not tested"), `RuntimeProfile.safeDefault` from the
+  Phase 4 profile, `Recovery` (3 bounded visible steps; known-good saved on "It worked"), log capped at 100 lines.
+- `:app/library`: `LibraryRepository` (atomic temp+rename JSON), `ImportManager` (private cache copy with SHA-256 →
+  inspect → confirm → copy into shared folder with progress; cancellable; temp cleanup incl. at startup; duplicate detection;
+  re-stage with hash check; remove with optional deletion of copied files; note to uninstall inside the runtime).
+- PC Apps → Library tab: 3-step wizard with plain-language findings ("examined, not run"), name, suggested settings,
+  advanced resolution/graphics, results with next steps; entry details: open runtime, worked/didn't work, suggestion N,
+  log, remove. Files app opens `.exe/.msi` into the wizard.
+- Real fixtures added: NSIS installer (`makensis`) and MSI (`wixl`), both installed successfully under Wine 10 on the host.
+
+Bugs found by tests and fixed
+- Recovery "lower to 1024×768" produced 1024×720 (per-axis min) → now sets exactly the stated mode only if smaller.
+
+Build/test (actual)
+- `:app:assembleDebug` SUCCESS. `:core:test` 64/64 (PE inspector 9 incl. 300-case corruption fuzz; library 7).
+  `:app:testDebugUnitTest` 53/53 (10 library UI tests: findings, no activity launched during import, staging bytes,
+  unsupported DLL, MSI, script, duplicate, recovery bounds, removal, Files hook, temp cleanup).
+
+Limitations
+- Inno Setup/InstallShield/WiX Burn detection uses marker strings; no real fixtures for those (cannot build them on Linux).
+- PocketOS cannot see inside the runtime's container, so installed-program state and outcomes are user-reported.
+
+Next: Phase 7 — compatibility recovery, diagnostics and quality.

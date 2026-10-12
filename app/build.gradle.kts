@@ -6,6 +6,8 @@ plugins {
 }
 
 android {
+    // Share the real PE fixtures and captured runtime logs with app tests.
+    sourceSets.getByName("test").resources.srcDir("../core/src/test/resources")
     namespace = "com.chronos.pocketos"
     compileSdk = 35
     defaultConfig {
