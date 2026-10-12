@@ -13,6 +13,7 @@ fun AppContent(window: AppWindow) {
         AppIds.CALCULATOR -> CalculatorApp()
         AppIds.SETTINGS -> SettingsApp()
         AppIds.SYSINFO -> SystemInfoApp()
+        AppIds.WINDOWS_APPS -> PcAppsApp(window)
         else -> UnknownApp(window)
     }
 }

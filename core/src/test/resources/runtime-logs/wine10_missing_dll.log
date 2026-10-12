@@ -1,0 +1,2 @@
+012c:err:module:import_dll Library pocketos_missing.dll (which is needed by L"Z:\\tmp\\wtest\\needs_missing_dll.exe") not found
+012c:err:module:loader_init Importing dlls for L"Z:\\tmp\\wtest\\needs_missing_dll.exe" failed, status c0000135

@@ -132,3 +132,23 @@ Limitations
 - Thresholds are conservative heuristics, documented in code and shown to the user.
 
 Next: Phase 5 — Windows runtime feasibility.
+
+## Phase 5 — Windows runtime feasibility and integration spike (2026-10-12)
+
+Decision: integrate with separately installed **Winlator (LGPL-2.1)** by handoff; PocketOS bundles no runtime.
+Full evidence and reasoning: `docs/PHASE5_RUNTIME.md`.
+
+Implemented
+- `:core/runtime` (catalog, availability by ABI, drive-path mapping, nonce sample verification, log translator).
+- `:app/runtime` (`RuntimeManager`, SAF/File staging stores), `<queries>` for `com.winlator`, PC Apps app (Runtime tab),
+  bundled public-domain sample `assets/sample/pocketos-sample.exe`; `tools/pe-fixtures` (sources, build script, README).
+
+Build/test (actual)
+- `:app:assembleDebug` SUCCESS. `:core:test` 48/48 (6 runtime tests, 2 using real Wine 10 logs/markers).
+  `:app:testDebugUnitTest` 43/43 (8 runtime UI tests).
+- Host-only: the fixtures ran under Wine 10.0 on x86-64 Linux (outputs recorded in tools/pe-fixtures/README.md).
+
+Blocker
+- No ARM64 Android device or emulator: execution through Winlator on Android is **not verified**. Documented with a manual procedure.
+
+Next: Phase 6 — installer wizard and app library.

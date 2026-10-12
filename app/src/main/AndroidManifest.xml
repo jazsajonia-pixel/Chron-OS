@@ -6,6 +6,11 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.type.pc" android:required="false" />
 
+    <!-- Package visibility: only the supported compatibility runtime is queried (Android 11+). -->
+    <queries>
+        <package android:name="com.winlator" />
+    </queries>
+
     <application
         android:name=".PocketOsApp"
         android:allowBackup="false"

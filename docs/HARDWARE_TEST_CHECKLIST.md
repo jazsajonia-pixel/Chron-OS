@@ -32,3 +32,8 @@ no Bluetooth/USB peripherals). Run them on real hardware and record the results 
 - [ ] Press Home on the phone while the monitor desktop is shown: record whether the monitor keeps showing PocketOS
       (behaviour of Presentation windows while the activity is stopped varies by device).
 - [ ] Note where the on-screen keyboard appears when a text field on the monitor is focused.
+
+## Windows runtime (ARM64 phone with Winlator installed)
+- [ ] Follow docs/PHASE5_RUNTIME.md "How to verify on a real phone"; record whether the sample result says "Verified".
+- [ ] Confirm Winlator sees files written by PocketOS in `Download/PocketOS` (D: drive).
+- [ ] Paste a real Winlator log into "Explain a runtime error" and note whether the explanation was helpful.

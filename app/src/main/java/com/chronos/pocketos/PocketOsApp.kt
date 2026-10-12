@@ -30,6 +30,8 @@ class PocketOsApp : Application() {
         private set
     lateinit var capabilities: com.chronos.pocketos.capability.CapabilityMonitor
         private set
+    lateinit var runtime: com.chronos.pocketos.runtime.RuntimeManager
+        private set
 
     /** Per-window transient state (e.g. unsaved editor text) that must survive moving between displays. */
     val windowState = mutableMapOf<Int, Any>()
@@ -51,6 +53,7 @@ class PocketOsApp : Application() {
             this, { displays.displays.value }, { settings.settings.value.profileChoice }, displays.supportsActivitiesOnSecondaryDisplays,
         )
         capabilities.startListening()
+        runtime = com.chronos.pocketos.runtime.RuntimeManager(this) { capabilities.capabilities.value.abis }
         appScope.launch {
             var lastChoice = settings.settings.value.profileChoice
             settings.settings.collect { if (it.profileChoice != lastChoice) { lastChoice = it.profileChoice; capabilities.recheck("Profile changed") } }
