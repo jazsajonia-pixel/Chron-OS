@@ -2,7 +2,12 @@
 
 ## 0.3.0 — programs run in a PocketOS window (current)
 
-`PocketOS-0.3.0-debug.apk` (in this folder, stored with Git LFS). Signed with the Android debug key — for personal
+| File | Use |
+|---|---|
+| `PocketOS-0.3.0-debug.apk` | **Install this one first.** Not minified, easiest to debug. |
+| `PocketOS-0.3.0-release.apk` | Minified (R8) build, smaller, same features. |
+
+Both are in this folder (stored with Git LFS). Signed with the Android debug key — for personal
 testing only. Needs a **64-bit ARM** phone. Installs over 0.2.0 (same package `com.chron.os`); uninstall 0.1.0 first.
 
 ### Running Windows programs
@@ -16,6 +21,7 @@ testing only. Needs a **64-bit ARM** phone. Installs over 0.2.0 (same package `c
 ### SHA-256
 ```
 24dbc3da44941510430fd93d75aa5238feedc6586736e8e437f73cb9756747fd  PocketOS-0.3.0-debug.apk
+f6d95717e8e605d2adf6d72c56ec62a44a71d7aced37ad793e5b17fd167109f1  PocketOS-0.3.0-release.apk
 ```
 
 ## 0.2.0 — built-in Windows runtime (previous, full-screen runtime)
