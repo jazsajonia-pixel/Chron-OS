@@ -106,6 +106,24 @@ class SmartCursor {
     /** Moves the cursor to a position inside the active desktop (px). Used by tests and keyboard accessibility. */
     fun warpTo(x: Float, y: Float) { pointer.warpTo(x, y); publish() }
 
+    /** Forwards a key event to the active desktop surface (used when the phone window has focus). */
+    fun forwardKey(event: android.view.KeyEvent): Boolean {
+        val t = targets[_activeTargetId.value ?: return false] ?: return false
+        return t.rootView.dispatchKeyEvent(event)
+    }
+
+    /** Types text into the focused field of the active desktop using virtual key events. */
+    fun typeText(text: String) {
+        val map = android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD)
+        map.getEvents(text.toCharArray())?.forEach { forwardKey(it) }
+    }
+
+    fun pressKey(code: Int) {
+        val now = SystemClock.uptimeMillis()
+        forwardKey(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, code, 0))
+        forwardKey(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, code, 0))
+    }
+
     fun markPhysicalMouseUsed() { if (!dispatching) _active.value = false }
     fun show() { _active.value = true }
     fun hide() { _active.value = false }

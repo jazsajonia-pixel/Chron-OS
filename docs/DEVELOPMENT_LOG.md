@@ -71,3 +71,32 @@ Limitations
 - Some OEMs intercept Alt+Tab/Meta; documented fallbacks.
 
 Next: Phase 3 — external monitor desktop mode.
+
+## Phase 3 — External monitor desktop mode (2026-10-12)
+
+Implemented
+- `:core/display`: `DisplayInfo`, `ExternalDisplayPolicy` (picks the largest usable presentation display; explains
+  "none connected", private, mirror-only, off, too small), `DesktopScale` (keeps the monitor desktop 1024–1920 dp wide,
+  user multiplier), `DisplaySessionReducer` (auto-start, user stop, move between displays, disconnect).
+- `:app/display`: `DisplaySessionManager` (public `DisplayManager.DisplayListener`, event log, reports
+  `FEATURE_ACTIVITIES_ON_SECONDARY_DISPLAYS`), `DesktopPresentation` (Android `Presentation` hosting the same `Desktop`
+  composable with its own density; key events routed to shortcuts).
+- Phone becomes a companion: full-size touchpad, Launcher / Next window / Keyboard (send text, Backspace, Enter, Tab, Esc) /
+  "Show desktop on phone". Physical-keyboard keys are forwarded to the monitor desktop when the phone window has focus.
+- Failure path: `InvalidDisplayException` or a vanished display → session stops, desktop stays on phone, message shown.
+- Settings → External display: status explanation, start/stop, re-check, auto-start, desktop size, per-display details.
+- `docs/HARDWARE_TEST_CHECKLIST.md` for real-device verification.
+
+Bugs found by tests and fixed
+- Test-only race: editor's async load overwrote a buffer written by the test; test now waits for load.
+
+Build/test (actual)
+- `:app:assembleDebug` SUCCESS. `:core:test` 36/36. `:app:testDebugUnitTest` 28/28 (8 new external-display tests using
+  Robolectric `ShadowDisplayManager`, with FLAG_PRESENTATION set via `ShadowDisplay`). Two consecutive clean `--rerun-tasks` runs.
+
+Limitations / not verified
+- No physical monitor, DisplayPort Alt Mode phone, dock, or wireless display was available. All display behaviour is
+  verified only against Robolectric's simulated display. Presentation behaviour while the activity is stopped, and IME
+  placement, are device-dependent and listed in the checklist.
+
+Next: Phase 4 — hardware-aware configuration.

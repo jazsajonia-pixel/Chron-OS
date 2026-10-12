@@ -44,6 +44,7 @@ fun SettingsApp() {
         SwitchRow("Reduce motion and shadows", "Fewer visual effects; saves a little battery", s.reduceMotion) { v -> app.settings.update { it.copy(reduceMotion = v) } }
 
         InputSettingsSection()
+        DisplaySettingsSection()
 
         SectionTitle("About")
         Text("PocketOS ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyLarge)

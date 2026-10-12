@@ -26,9 +26,14 @@ class PocketOsApp : Application() {
     lateinit var keys: KeyShortcutHandler
         private set
     val appScope = MainScope()
+    lateinit var displays: com.chronos.pocketos.display.DisplaySessionManager
+        private set
 
     /** Per-window transient state (e.g. unsaved editor text) that must survive moving between displays. */
     val windowState = mutableMapOf<Int, Any>()
+
+    /** True while the companion screen's own text box has focus (keys then stay on the phone). */
+    @Volatile var companionTextFocused = false
 
     override fun onCreate() {
         super.onCreate()
@@ -38,6 +43,8 @@ class PocketOsApp : Application() {
         input = PhysicalInputMonitor(this)
         keys = KeyShortcutHandler(shell, { settings.settings.value }, cursor)
         appScope.launch { settings.settings.collect { cursor.configure(it) } }
+        displays = com.chronos.pocketos.display.DisplaySessionManager(this) { settings.settings.value.autoStartDesktopOnExternalDisplay }
+        displays.startListening()
         seedHome()
     }
 
@@ -52,6 +59,9 @@ class PocketOsApp : Application() {
             )
         }
     }
+
+    /** UI scale multiplier for the external desktop (user override; Phase 4 adds profile-based defaults). */
+    fun uiScaleForExternal(s: com.chronos.pocketos.core.settings.ShellSettings): Float = s.uiScaleOverride ?: 1f
 
     fun saveSession() = settings.saveSession(shell.encodeSession())
 }
