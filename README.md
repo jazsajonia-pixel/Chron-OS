@@ -63,8 +63,8 @@ The release build is signed with the **debug key** so it can be installed for te
   window. The Smart Cursor (or a mouse) controls it, a keyboard types into it while its window is focused, and the
   window's Keyboard button shows the on-screen keyboard. Close the window (or press Stop) to end the program. The
   phone never switches to another screen. Afterwards report "It worked" / "It didn't work"; PocketOS remembers working settings
-  or applies the next fix automatically. "Run self-test" in the Runtime tab proves that Windows programs start on
-  your phone.
+  or applies the next fix automatically. "Run self-test" in the Runtime tab checks that the included Windows self-test
+  program starts on your phone.
 
 ## Privacy
 
